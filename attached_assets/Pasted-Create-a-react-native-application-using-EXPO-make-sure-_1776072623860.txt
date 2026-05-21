@@ -1,0 +1,25 @@
+Create a react native application using EXPO, make sure to prioritize using GLUESTACK UI components and NATIVEWIND for CSS styling, prioritize using them as possible. The user actually there are 3 (TEACHER, SCHOOL, and PROVIDER (the company that created the app)), there is already the web app created as a backend (using CodeIgniter framework), and the database used is postgresql, but the mobile that need to be created will only contain2 users that are TEACHER and SCHOOL, their two features are told as follow, prioritize to use the following requirements as possible as the base for building the mobile application, also make it available/usable to change theme for light/dark mode as cleanly/clearly as possible
+
+TEACHER:
+- Can Register in Front, without Login
+- TEACHER while Registering, fills profile data (especially subject and location) and upload documents, then accept integrity statement
+- After Logging in, display the terms & conditions if never accepted before then go to TEACHER dashboard, else the TEACHER get logged out
+- When chosen by a SCHOOL, then TEACHER got a notification to display the teaching session request whether to apply or decline
+- After a TEACHER (the fastest one) accepted the offer, show that another TEACHER already accepted the offer first
+- After TEACHER coming to SCHOOL, TEACHER checks in for the attendance of the session in the application so SCHOOL can for the attendance as well
+- After that TEACHER can also complete the session in the application so SCHOOL can confirm as well
+- TEACHER receive the payment notification after SCHOOL paid & Provider redirected the payment
+- TEACHER can look up the review & profile reputation filled by the SCHOOL after the previous process finished
+
+SCHOOL:
+- Can Register in Front, without Login
+- SCHOOL while Registering, fills profile data (especially location) and upload documents, then accept integrity statement
+- After Logging in, display the terms & conditions if never accepted before then go to SCHOOL dashboard, else the SCHOOL get logged out
+- SCHOOL can create teaching session request by pointing schedule and provide own term & condition and or agreement
+- SCHOOL view TEACHERs list (that is retrieved from the backend/server), SCHOOL can also search within the list, then SCHOOL selects one or many TEACHERs from the list (can also select all or select none, default to all)
+- SCHOOL then get notified if one of the TEACHERs already accepted the offer
+- SCHOOL get notified when the TEACHER confirmed to start the session, then confirm the attendance of the TEACHER in the application if they already come to SCHOOL
+- SCHOOL then get notified when the TEACHER confirmed to finish the session, then confirming the completion in the application
+- After SCHOOL confirmed the completion of the session, then SCHOOL get notified of the payment invoice (based off data retrieved from the backend/server)
+- After SCHOOL paid the invoice (outside of the application), SCHOOL then can upload the payment proof inside the application
+- After Provider from the backend/server confirmed the payment, then SCHOOL get notification of the successful payment, then SCHOOL can submit review for the selected TEACHER
