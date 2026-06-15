@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, TextInput, Image, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, TextInput, Image, RefreshControl, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,7 +8,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { TeacherProfile } from '@/types';
 import { Colors } from '@/constants/Colors';
 import { confirmDialog, notify } from '@/lib/dialogs';
-import { profileRepository } from '@/lib/repositories/profileRepository';
 import {
 	AppButton,
 	AppCard,
@@ -21,6 +20,7 @@ import {
 } from '@/components/ui/AppPrimitives';
 import { getStates, getSuburbs, getTeacherProfile, updateTeacherProfile, uploadProfilePhoto } from '@/lib/services/teacher';
 import { useIsFocused } from '@react-navigation/native';
+import { Modal } from 'react-native';
 
 const ACCREDITATION_LEVEL_OPTIONS = [
 	{ value: 'Graduate Teacher', label: 'Graduate Teacher' },
@@ -64,6 +64,9 @@ export default function TeacherProfileScreen() {
 	const [profileImage, setProfileImage] = useState<string>(teacher?.profileImage || '');
 	const avatarSize = spacing.heroIconSize;
 	const avatarIconSize = spacing.heroIconSize <= 64 ? 30 : spacing.heroIconSize >= 78 ? 38 : 34;
+	const [verificationLogs, setVerificationLogs] = useState<any[]>([]);
+	const [showVerifLogs, setShowVerifLogs] = useState(false);
+	const [verifStatus, setVerifStatus] = useState<number>(0);
 
 	// Form state (frontend-only, no persistence without backend)
 
@@ -107,8 +110,7 @@ export default function TeacherProfileScreen() {
 		}
 	}, [user, router]);
 
-
-	// Keep local form state in sync when user changes (persisted data)
+	// ambil data profile dari backend
 	const fetchTeacherProfile = async () => {
 		if (user?.role !== 9) return;
 		setLoadingProfile(true);
@@ -135,6 +137,8 @@ export default function TeacherProfileScreen() {
 			setRepeatPassword('');
 			setProfileImage(res.photo != null ? res.photo : teacher?.profileImage);
 			setLoadingRating(Number(res.rating) || 0);
+			setVerificationLogs(user.verification_logs || []);
+			setVerifStatus(user.verification_status ?? 0);
 		} catch (e) {
 			console.error('Failed to fetch profile:', e);
 		} finally {
@@ -148,16 +152,18 @@ export default function TeacherProfileScreen() {
 		}
 	}, [user, isFocused]);
 
+	// refresh control untuk pull-to-refresh
 	const onRefresh = async () => {
-		setRefreshing(true);
+		setRefreshing(true); // true, ambil data terbaru
 		try {
 			await fetchTeacherProfile();
 		} finally {
-			setRefreshing(false);
+			setRefreshing(false); // false, selesai ambil data
 		}
 	};
 
 	useEffect(() => {
+		// ambil daftar state dari API
 		async function loadStates() {
 			try {
 				const raw = await getStates()
@@ -184,6 +190,7 @@ export default function TeacherProfileScreen() {
 		loadStates()
 	}, [])
 
+	// Fetch and update suburb list when user changes state
 	async function handleStateChange(nextState: string) {
 		setLocationState(nextState);
 		setLocationSuburbId('');
@@ -235,6 +242,7 @@ export default function TeacherProfileScreen() {
 		? selectedSuburb.label
 		: '';
 
+	// pilih suburb, otomatis set suburb dan postcode
 	function handleSuburbChange(label: string) {
 		const selected = suburbsForState.find((item) => item.label === label);
 		setLocationSuburbId(selected?.value || '');
@@ -247,7 +255,17 @@ export default function TeacherProfileScreen() {
 		}
 	}, [selectedSuburb]);
 
+	// simpan perubahan profile ke backend
 	async function handleSave() {
+		const shouldSave = await confirmDialog({
+			title: 'Confirm Changes',
+			message:
+				'Updating your school profile may require provider re-verification. This could temporarily affect your verification status. Do you want to continue?',
+			confirmText: 'Save Changes',
+		});
+
+		if (!shouldSave) return;
+		
 		if (!firstName.trim() || !lastName.trim()) {
 			alert('First Name and Last Name are required');
 			return;
@@ -291,15 +309,29 @@ export default function TeacherProfileScreen() {
 			});
 
 			notify('Success', 'Profile saved successfully');
+			setVerifStatus(0);
 		} catch (e) {
-			console.error('Failed to save profile:', e);
-			notify('Error', 'Failed to save profile');
+			const error = e as any;
+
+			notify(
+				'Error',
+				error?.response?.data?.message ||
+				error?.message ||
+				'Something went wrong'
+			);
 		} finally {
 			setIsSaving(false);
 		}
 	}
+	console.log('verifStatus: ', verifStatus);
 
+	// logout akun
 	async function handleLogout() {
+		if (verifStatus == 2) {
+			notify('Info', 'Please save your profile before logging out.');
+			return;
+		}
+
 		const shouldLogout = await confirmDialog({
 			title: 'Logout',
 			message: 'Are you sure you want to log out?',
@@ -312,6 +344,7 @@ export default function TeacherProfileScreen() {
 		router.replace('/login');
 	}
 
+	// ganti foto profile
 	async function handleChangePhoto() {
 		try {
 			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -322,7 +355,7 @@ export default function TeacherProfileScreen() {
 
 			const result = await ImagePicker.launchImageLibraryAsync({
 				mediaTypes: ImagePicker.MediaTypeOptions.Images,
-				allowsEditing: true,
+				allowsEditing: false,
 				aspect: [1, 1],
 				quality: 0.8,
 			});
@@ -365,287 +398,273 @@ export default function TeacherProfileScreen() {
 		);
 	}
 	return (
-		<ScrollView
-			style={styles.container}
-			refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />}
-			contentContainerStyle={[
-				styles.content,
-				{
-					paddingTop: topPad + spacing.topOffset,
-					paddingHorizontal: spacing.horizontal,
-					paddingBottom: spacing.bottomPadding,
-				},
-			]}
-		>
-			<View style={{ alignItems: 'center', marginBottom: spacing.sectionGap }}>
-				<Text style={styles.pageTitle}>Profile</Text>
-				<Text style={styles.pageSubtitle}>Manage your profile information</Text>
-			</View>
-			{/* PROFILE PHOTO */}
-			<View style={[styles.profileHeader, { marginBottom: spacing.sectionGap }]}>
-				<View
-					style={[
-						styles.avatar,
-						{
-							width: avatarSize,
-							height: avatarSize,
-							borderRadius: avatarSize / 2,
-							overflow: 'hidden',
-						},
-					]}
-				>
-					{profileImage ? (
-						<Image
-							source={{ uri: profileImage }}
-							style={{
-								width: avatarSize,
-								height: avatarSize,
-								borderRadius: avatarSize / 2,
-							}}
-						/>
-					) : (
-						<Ionicons name="person" size={avatarIconSize} color={Colors.secondary} />
-					)}
+		<View style={{ flex: 1 }}>
+			<ScrollView
+				style={styles.container}
+				refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />}
+				contentContainerStyle={[
+					styles.content,
+					{
+						paddingTop: topPad + spacing.topOffset,
+						paddingHorizontal: spacing.horizontal,
+						paddingBottom: spacing.bottomPadding,
+					},
+				]}
+			>
+				<View style={{ alignItems: 'center', marginBottom: spacing.sectionGap }}>
+					<Text style={styles.pageTitle}>Profile</Text>
+					<Text style={styles.pageSubtitle}>Manage your profile information</Text>
 				</View>
-				
-				<View style={[styles.ratingRow, { marginBottom: 6 }]}>
-					{[1, 2, 3, 4, 5].map((star) => {
-						const rating = Number(loadingRating ?? 0);  // ← dari API, bukan teacher.rating
-						const filled = star <= Math.floor(rating);
-						const half = !filled && star === Math.ceil(rating) && rating % 1 >= 0.5;
 
-						return (
-							<Ionicons
-								key={star}
-								name={filled ? 'star' : half ? 'star-half' : 'star-outline'}
-								size={13}
-								color={filled || half ? Colors.warning : Colors.secondary}
+				{/* PROFILE PHOTO */}
+				<View style={[styles.profileHeader, { marginBottom: spacing.sectionGap }]}>
+					<View style={[styles.avatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2, overflow: 'hidden' }]}>
+						{profileImage ? (
+							<Image source={{ uri: profileImage }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }} />
+						) : (
+							<Ionicons name="person" size={avatarIconSize} color={Colors.secondary} />
+						)}
+					</View>
+
+					<View style={[styles.ratingRow, { marginBottom: 6 }]}>
+						{[1, 2, 3, 4, 5].map((star) => {
+							const rating = Number(loadingRating ?? 0);
+							const filled = star <= Math.floor(rating);
+							const half = !filled && star === Math.ceil(rating) && rating % 1 >= 0.5;
+							return (
+								<Ionicons
+									key={star}
+									name={filled ? 'star' : half ? 'star-half' : 'star-outline'}
+									size={13}
+									color={filled || half ? Colors.warning : Colors.secondary}
+								/>
+							);
+						})}
+						<Text style={styles.rating}>{Number(loadingRating ?? 0).toFixed(1)}</Text>
+					</View>
+
+					<TouchableOpacity style={styles.changePhotoBtn} activeOpacity={0.7} onPress={handleChangePhoto}>
+						<Ionicons name="camera" size={16} color={Colors.primary} />
+						<Text style={styles.changePhotoText}>Change Photo</Text>
+					</TouchableOpacity>
+				</View>
+
+				{/* QUICK ACCESS */}
+				<AppCard style={{ marginBottom: spacing.sectionGap }} padding={spacing.cardPadding}>
+					<Text style={{ fontWeight: '700', marginBottom: 12 }}>Add New</Text>
+					<View style={{ flexDirection: 'row', gap: 10 }}>
+						{verifStatus == 1 && (
+							<TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/subjects')}>
+								<Ionicons name="book-outline" size={20} color={Colors.primary} />
+								<Text style={styles.quickText}>My Subjects</Text>
+							</TouchableOpacity>
+						)}
+						<TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/documents')}>
+							<Ionicons name="document-outline" size={20} color={Colors.primary} />
+							<Text style={styles.quickText}>My Documents</Text>
+						</TouchableOpacity>
+						{verifStatus == 1 && (	
+							<TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/teacher-reviews')}>
+								<Ionicons name="star-outline" size={20} color={Colors.primary} />
+								<Text style={styles.quickText}>Reviews</Text>
+							</TouchableOpacity>
+						)}
+					</View>
+				</AppCard>
+
+				{/* Verification Logs Button */}
+				{verifStatus != 1 && (
+					<TouchableOpacity style={verifStyles.logsBtn} onPress={() => setShowVerifLogs(true)} activeOpacity={0.8}>
+						<Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
+						<Text style={verifStyles.logsBtnText}>Revision Notes</Text>
+						{verificationLogs.length > 0 && (
+							<View style={verifStyles.badge}>
+								<Text style={verifStyles.badgeText}>{verificationLogs.length}</Text>
+							</View>
+						)}
+						<Ionicons name="chevron-forward" size={16} color={Colors.textMuted} style={{ marginLeft: 'auto' }} />
+					</TouchableOpacity>
+				)}
+
+				{/* FORM */}
+				<View style={styles.section}>
+					<View style={[styles.formCard, { padding: spacing.cardPadding }]}>
+						<AppSectionHeader title="Teacher Information" titleSize="md" />
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>First Name *</Text>
+							<TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
+						</View>
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Last Name *</Text>
+							<TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
+						</View>
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Preferred Name</Text>
+							<TextInput style={styles.input} value={preferredName} onChangeText={setPreferredName} />
+						</View>
+						<AppDateField label="Date of Birth" value={dateOfBirth} onChange={setDateOfBirth} />
+						<View style={styles.formGroup}>
+							<AppSearchSelectField
+								label="Gender"
+								value={gender}
+								onChange={setGender}
+								options={[
+									{ label: 'Male', value: 'Male' },
+									{ label: 'Female', value: 'Female' },
+									{ label: 'Other', value: 'Other' },
+								]}
+								closeOnSelect
 							/>
-						);
-					})}
-					<Text style={styles.rating}>{Number(loadingRating ?? 0).toFixed(1)}</Text>
-					{/* hapus reviewCount atau isi dengan data lain, karena loadingRating sudah dipakai untuk nilai rating */}
+						</View>
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Teacher Registration Number</Text>
+							<TextInput style={styles.input} value={teacherRegistrationNumber} onChangeText={setTeacherRegistrationNumber} />
+						</View>
+						<AppSearchSelectField
+							label="Accreditation Level"
+							value={ACCREDITATION_LABEL_BY_VALUE[accreditation_level] || ''}
+							onChange={(label) => set_accreditation_level(ACCREDITATION_VALUE_BY_LABEL[label] || '')}
+							options={ACCREDITATION_LEVEL_OPTIONS}
+							placeholder="Select accreditation level"
+							searchPlaceholder="Search accreditation..."
+							closeOnSelect
+						/>
+						<AppSearchSelectField
+							label="Qualification Level"
+							value={QUALIFICATION_LABEL_BY_VALUE[qualification_level] || ''}
+							onChange={(label) => set_qualification_level(QUALIFICATION_VALUE_BY_LABEL[label] || '')}
+							options={QUALIFICATION_LEVEL_OPTIONS}
+							placeholder="Select qualification level"
+							searchPlaceholder="Search qualification..."
+							closeOnSelect
+						/>
+
+						<AppSectionHeader title="Contact Information" titleSize="md" />
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Email *</Text>
+							<TextInput style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+						</View>
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Phone</Text>
+							<TextInput style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+						</View>
+
+						<AppSectionHeader title="Location" titleSize="md" />
+						<View style={styles.formGroup}>
+							<AppSearchSelectField label="State" value={location_state} onChange={handleStateChange} options={stateOptions} closeOnSelect />
+						</View>
+						<View style={styles.formGroup}>
+							<AppSearchSelectField label="Suburb" value={selectedSuburbLabel} onChange={handleSuburbChange} options={suburbOptions} closeOnSelect />
+						</View>
+						<View style={styles.formGroup}>
+							<AppField label="Postcode" value={postcode} onChangeText={setPostcode} inputProps={{ editable: false }} />
+						</View>
+
+						<AppSectionHeader title="Account Setup" titleSize="md" />
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Password</Text>
+							<TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
+						</View>
+						<View style={styles.formGroup}>
+							<Text style={styles.label}>Confirm Password</Text>
+							<TextInput style={styles.input} value={repeatPassword} onChangeText={setRepeatPassword} secureTextEntry />
+						</View>
+					</View>
+
+					<AppButton title="Save Profile" onPress={handleSave} loading={isSaving} style={[styles.saveBtn, { marginTop: spacing.sectionGap }]} />
 				</View>
 
-				<TouchableOpacity
-					style={styles.changePhotoBtn}
-					activeOpacity={0.7}
-					onPress={handleChangePhoto}
-				>
-					<Ionicons name="camera" size={16} color={Colors.primary} />
-					<Text style={styles.changePhotoText}>Change Photo</Text>
+				{/* LOGOUT */}
+				<TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+					<Ionicons name="log-out-outline" size={20} color={Colors.error} />
+					<Text style={styles.logoutText}>Logout</Text>
 				</TouchableOpacity>
-			</View>
+			</ScrollView>
 
-			{/* QUICK ACCESS */}
-			<AppCard
-				style={{ marginBottom: spacing.sectionGap }}
-				padding={spacing.cardPadding}
+			{/* MODAL - di luar ScrollView */}
+			<Modal
+				visible={showVerifLogs && verifStatus !== 1}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setShowVerifLogs(false)}
 			>
-				<Text style={{ fontWeight: '700', marginBottom: 12 }}>
-					Add New
-				</Text>
+				<View style={verifStyles.overlay}>
+					<TouchableWithoutFeedback onPress={() => setShowVerifLogs(false)}>
+						<View style={StyleSheet.absoluteFill} />
+					</TouchableWithoutFeedback>
+					<View style={verifStyles.modal}>
+						<View style={verifStyles.modalHeader}>
+							<Text style={verifStyles.modalTitle}>
+								Revision Notes
+							</Text>
 
-				<View style={{ flexDirection: 'row', gap: 10 }}>
+							<TouchableOpacity
+								onPress={() => setShowVerifLogs(false)}
+							>
+								<Ionicons
+									name="close"
+									size={22}
+									color={Colors.text}
+								/>
+							</TouchableOpacity>
+						</View>
 
-					<TouchableOpacity
-						style={styles.quickBtn}
-						onPress={() => router.push('/subjects')}
-					>
-						<Ionicons name="book-outline" size={20} color={Colors.primary} />
-						<Text style={styles.quickText}>My Subjects</Text>
-					</TouchableOpacity>
+						<ScrollView
+							style={verifStyles.scrollContent}
+							contentContainerStyle={{ paddingBottom: 8 }}
+							nestedScrollEnabled
+							keyboardShouldPersistTaps="handled"
+							showsVerticalScrollIndicator={false}
+						>
+							{verificationLogs.length === 0 ? (
+								<Text style={verifStyles.emptyText}>
+									No Revision Notes found.
+								</Text>
+							) : (
+								verificationLogs.map((log, index) => (
+									<View
+										key={log.id}
+										style={[
+											verifStyles.logItem,
+											index !== verificationLogs.length - 1 &&
+												verifStyles.logItemBorder,
+										]}
+									>
+										<View style={verifStyles.logRow}>
+											<Ionicons
+												name="time-outline"
+												size={14}
+												color={Colors.textSecondary}
+											/>
 
-					<TouchableOpacity
-						style={styles.quickBtn}
-						onPress={() => router.push('/documents')}
-					>
-						<Ionicons name="document-outline" size={20} color={Colors.primary} />
-						<Text style={styles.quickText}>My Documents</Text>
-					</TouchableOpacity>
+											<Text style={verifStyles.logDate}>
+												{new Date(
+													log.created_at
+												).toLocaleString(
+													'en-AU',
+													{
+														day: '2-digit',
+														month: 'short',
+														year: 'numeric',
+														hour: '2-digit',
+														minute: '2-digit',
+													}
+												)}
+											</Text>
+										</View>
 
-					<TouchableOpacity
-						style={styles.quickBtn}
-						onPress={() => router.push('/teacher-reviews')}
-					>
-						<Ionicons name="star-outline" size={20} color={Colors.primary} />
-						<Text style={styles.quickText}>Reviews</Text>
-					</TouchableOpacity>
-
+										<Text style={verifStyles.logNote}>
+											{log.verification_notes?.trim() ||
+												'No notes provided'}
+										</Text>
+									</View>
+								))
+							)}
+						</ScrollView>
+					</View>
 				</View>
-			</AppCard>
-
-			{/* FORM */}
-			<View style={styles.section}>
-				<View style={[styles.formCard, { padding: spacing.cardPadding }]}>
-
-					{/* TEACHER INFORMATION */}
-					<AppSectionHeader title="Teacher Information" titleSize="md" />
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>First Name *</Text>
-						<TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
-					</View>
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Last Name *</Text>
-						<TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
-					</View>
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Preferred Name</Text>
-						<TextInput style={styles.input} value={preferredName} onChangeText={setPreferredName} />
-					</View>
-
-					<AppDateField
-						label="Date of Birth"
-						value={dateOfBirth}
-						onChange={setDateOfBirth}
-					/>
-
-					<View style={styles.formGroup}>
-						<AppSearchSelectField
-							label="Gender"
-							value={gender}
-							onChange={setGender}
-							options={[
-								{ label: 'Male', value: 'Male' },
-								{ label: 'Female', value: 'Female' },
-								{ label: 'Other', value: 'Other' },
-							]}
-							closeOnSelect
-						/>
-					</View>
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Teacher Registration Number</Text>
-						<TextInput
-							style={styles.input}
-							value={teacherRegistrationNumber}
-							onChangeText={setTeacherRegistrationNumber}
-						/>
-					</View>
-
-					<AppSearchSelectField
-						label="Accreditation Level"
-						value={ACCREDITATION_LABEL_BY_VALUE[accreditation_level] || ''}
-						onChange={(label) => set_accreditation_level(ACCREDITATION_VALUE_BY_LABEL[label] || '')}
-						options={ACCREDITATION_LEVEL_OPTIONS}
-						placeholder="Select accreditation level"
-						searchPlaceholder="Search accreditation..."
-						closeOnSelect
-					/>
-
-					<AppSearchSelectField
-						label="Qualification Level"
-						value={QUALIFICATION_LABEL_BY_VALUE[qualification_level] || ''}
-						onChange={(label) => set_qualification_level(QUALIFICATION_VALUE_BY_LABEL[label] || '')}
-						options={QUALIFICATION_LEVEL_OPTIONS}
-						placeholder="Select qualification level"
-						searchPlaceholder="Search qualification..."
-						closeOnSelect
-					/>
-
-					{/* CONTACT */}
-					<AppSectionHeader title="Contact Information" titleSize="md" />
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Email *</Text>
-						<TextInput
-							style={styles.input}
-							value={email}
-							onChangeText={setEmail}
-							keyboardType="email-address"
-							autoCapitalize="none"
-						/>
-					</View>
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Phone</Text>
-						<TextInput
-							style={styles.input}
-							value={phone}
-							onChangeText={setPhone}
-							keyboardType="phone-pad"
-						/>
-					</View>
-
-					{/* LOCATION */}
-					<AppSectionHeader title="Location" titleSize="md" />
-
-					<View style={styles.formGroup}>
-						<AppSearchSelectField
-							label="State"
-							value={location_state}
-							onChange={handleStateChange}
-							options={stateOptions}
-							closeOnSelect
-						/>
-					</View>
-
-					<View style={styles.formGroup}>
-						<AppSearchSelectField
-							label="Suburb"
-							value={selectedSuburbLabel}
-							onChange={handleSuburbChange}
-							options={suburbOptions}
-							closeOnSelect
-						/>
-					</View>
-
-					<View style={styles.formGroup}>
-						<AppField
-							label="Postcode"
-							value={postcode}
-							onChangeText={setPostcode}
-							inputProps={{ editable: false }}
-						/>
-					</View>
-
-					{/* ACCOUNT */}
-					<AppSectionHeader title="Account Setup" titleSize="md" />
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Password</Text>
-						<TextInput
-							style={styles.input}
-							value={password}
-							onChangeText={setPassword}
-							secureTextEntry
-						/>
-					</View>
-
-					<View style={styles.formGroup}>
-						<Text style={styles.label}>Confirm Password</Text>
-						<TextInput
-							style={styles.input}
-							value={repeatPassword}
-							onChangeText={setRepeatPassword}
-							secureTextEntry
-						/>
-					</View>
-
-				</View>
-
-				{/* SAVE */}
-				<AppButton
-					title="Save Profile"
-					onPress={handleSave}
-					loading={isSaving}
-					style={[styles.saveBtn, { marginTop: spacing.sectionGap }]}
-				/>
-			</View>
-
-			{/* LOGOUT */}
-			<TouchableOpacity
-				style={styles.logoutBtn}
-				onPress={handleLogout}
-				activeOpacity={0.8}
-			>
-				<Ionicons name="log-out-outline" size={20} color={Colors.error} />
-				<Text style={styles.logoutText}>Logout</Text>
-			</TouchableOpacity>
-		</ScrollView>
+			</Modal>
+		</View>
 	);
 }
 
@@ -793,4 +812,106 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		color: Colors.textMuted,
 	}
+});
+
+const verifStyles = StyleSheet.create({
+    logsBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: Colors.primary + '30',
+        backgroundColor: Colors.primaryBg,
+        marginBottom: 16,
+    }, 	
+	scrollContent: {
+		maxHeight: 360,
+	},
+    logsBtnText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.primary,
+        flex: 1,
+    },
+    badge: {
+        backgroundColor: Colors.primary,
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 5,
+    },
+    badgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    overlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.45)',
+		justifyContent: 'center',
+		alignItems: 'center',
+		paddingHorizontal: 20,
+	},
+    modal: {
+		backgroundColor: Colors.surface,
+		borderRadius: 16,
+		padding: 20,
+		width: '100%',
+		maxHeight: '85%',
+		shadowColor: '#000',
+		shadowOpacity: 0.15,
+		shadowRadius: 12,
+		elevation: 8,
+	},
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    modalTitle: {
+		marginRight: 50,
+		fontSize: 18,
+		fontWeight: '700',
+		color: Colors.text,
+	},
+    logItem: {
+        paddingVertical: 12,
+        gap: 6,
+    },
+    logItemBorder: {
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    logRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    logDate: {
+        fontSize: 12,
+        color: Colors.textSecondary,
+    },
+    logNote: {
+        fontSize: 14,
+        color: Colors.text,
+        lineHeight: 20,
+    },
+    logNoteEmpty: {
+        fontSize: 14,
+        color: Colors.textMuted,
+        fontStyle: 'italic',
+    },
+    emptyText: {
+        fontSize: 14,
+        color: Colors.textMuted,
+        fontStyle: 'italic',
+        textAlign: 'center',
+        paddingVertical: 20,
+    },
 });

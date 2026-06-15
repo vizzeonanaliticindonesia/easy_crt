@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, Linking, Platform, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
+import { useIsFocused } from '@react-navigation/native';
 import { confirmDialog, notify } from '@/lib/dialogs';
+// import { SchoolDocument } from '@/types';
+import { documentsRepository } from '@/lib/repositories/documentsRepository';
 import {
     AppButton,
     AppEmptyState,
@@ -13,58 +16,34 @@ import {
     AppSectionHeader,
     useResponsiveSpacing,
 } from '@/components/ui/AppPrimitives';
-import { getTeacherDocuments, deleteTeacherDocument } from '@/lib/services/teacher';
-import { useIsFocused } from '@react-navigation/native';
+import { getSchoolDocuments, deleteSchoolDocument } from '@/lib/services/school';
 
-export default function TeacherDocumentsScreen() {
+export default function SchoolDocumentsScreen() {
     const router = useRouter();
     const { refresh } = useLocalSearchParams<{ refresh?: string }>();
     const insets = useSafeAreaInsets();
-    const isFocused = useIsFocused();
     const spacing = useResponsiveSpacing();
     const topPad = Platform.OS === 'web' ? 67 : insets.top;
+    const isFocused = useIsFocused();
     const [documents, setDocuments] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
+    const [loading, setLoading] = React.useState(true);
+    const [refreshing, setRefreshing] = React.useState(false);
     const goBack = () => {
-        router.replace('/profile');
+    router.replace('/profile');
     };
 
     const loadDocuments = React.useCallback(async () => {
         setLoading(true);
         try {
-            const raw = await getTeacherDocuments();
-            console.log('getTeacherDocuments raw:', raw);
-            const res = typeof raw === 'string' ? JSON.parse(raw) : raw;
-
-            let list: any[] = [];
-            if (Array.isArray(res)) {
-                list = res;
-            } else if (res?.data) {
-                list = res.data;
-            } else if (res?.documents) {
-                list = res.documents;
-            } else if (res?.items) {
-                list = res.items;
-            } else {
-                list = res ? [res] : [];
-            }
-
-            console.log('Parsed documents list length:', list.length);
-            setDocuments(list);
-        } catch (err) {
-            console.error('Load documents error:', err);
+            const saved = await getSchoolDocuments();
+            setDocuments(saved.documents);
+            console.log('Fetched documents:', documents);
+        } catch {
             notify('Error', 'Failed to load documents');
         } finally {
             setLoading(false);
         }
     }, []);
-
-    React.useEffect(() => {
-        if (isFocused) {
-            loadDocuments();
-        }
-    }, [loadDocuments, refresh, isFocused]);
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -75,9 +54,11 @@ export default function TeacherDocumentsScreen() {
         }
     };
 
-    const handleEdit = (documentId: string) => {
-        router.push(`/edit-document?id=${documentId}`);
-    };
+    React.useEffect(() => {
+        if (isFocused) {
+            loadDocuments();
+        }
+    }, [loadDocuments, refresh, isFocused]);
 
     async function handleDelete(documentId: string) {
         const shouldDelete = await confirmDialog({
@@ -90,13 +71,10 @@ export default function TeacherDocumentsScreen() {
         if (!shouldDelete) return;
 
         try {
-            const res = await deleteTeacherDocument(documentId);
-            console.log('deleteTeacherDocument response:', res);
-            // refresh list after successful delete
+            const updated = await deleteSchoolDocument(documentId);
             await loadDocuments();
             notify('Success', 'Document deleted successfully');
-        } catch (err) {
-            console.error('Delete document error:', err);
+        } catch {
             notify('Error', 'Failed to delete document');
         }
     }
@@ -104,16 +82,16 @@ export default function TeacherDocumentsScreen() {
     return (
         <View style={[styles.container, { paddingTop: topPad + spacing.topOffset }]}>
             <View style={{ paddingHorizontal: spacing.horizontal }}>
-                <AppIconButton
-                    icon="arrow-back"
-                    onPress={goBack}
-                    size={spacing.iconGlyphSize}
-                    containerSize={spacing.iconButtonSize}
-                    style={{ marginBottom: 12 }}
-                />
+                                    <AppIconButton
+                                        icon="arrow-back"
+                                        onPress={goBack}
+                                        size={spacing.iconGlyphSize}
+                                        containerSize={spacing.iconButtonSize}
+                                        style={{ marginBottom:12 }}
+                                    />
             </View>
             <View style={{ paddingHorizontal: spacing.horizontal }}>
-                <AppPageHeader title="Teacher Documents" subtitle="Manage your uploaded teacher files" style={styles.title} />
+                <AppPageHeader title="School Documents" subtitle="Manage your uploaded school files" style={styles.title} />
                 <AppButton
                     title="Upload Document"
                     onPress={() => router.push('/create-document')}
@@ -138,10 +116,15 @@ export default function TeacherDocumentsScreen() {
                     <View style={[styles.card, { padding: spacing.cardPadding - 4 }]}>
                         <View style={styles.cardTopRow}>
                             <View style={styles.fileInfoWrap}>
-                                <View style={styles.fileRow}>
-                                    <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
-                                    <Text style={styles.fileName}>{item.document_name}</Text>
-                                </View>
+                                <TouchableOpacity onPress={() => Linking.openURL(item.file_url)}>
+                                    <View style={styles.fileRow}>
+                                        <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
+                                        <Text style={styles.fileName}>
+                                        {/* {item.document_name.split('/').pop()} */}
+                                        {item.document_name}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
                                 <Text style={styles.metaText}>Name: {item.document_name}</Text>
                                 <Text style={styles.metaText}>No: {item.document_number || '-'}</Text>
                                 <Text style={styles.metaText}>Issued by: {item.issued_by || '-'}</Text>
@@ -150,10 +133,6 @@ export default function TeacherDocumentsScreen() {
                         </View>
 
                         <View style={styles.actionRow}>
-                            <TouchableOpacity activeOpacity={0.8} style={styles.editBtn} onPress={() => handleEdit(item.id)}>
-                                <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
-                                <Text style={styles.editText}>Edit</Text>
-                            </TouchableOpacity>
                             <TouchableOpacity activeOpacity={0.8} style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
                                 <Ionicons name="trash-outline" size={16} color={Colors.error} />
                                 <Text style={styles.deleteText}>Delete</Text>
@@ -161,8 +140,12 @@ export default function TeacherDocumentsScreen() {
                         </View>
                     </View>
                 )}
-                refreshing={refreshing}
-                onRefresh={onRefresh}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                    />
+                }
                 ListEmptyComponent={
                     <AppEmptyState
                         icon="folder-open-outline"
@@ -231,23 +214,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'flex-end',
         marginTop: 12,
-    },
-    editBtn: {
-        marginRight: 6,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        borderWidth: 1,
-        borderColor: Colors.primary + '40',
-        borderRadius: 10,
-        paddingVertical: 8,
-        paddingHorizontal: 10,
-        backgroundColor: Colors.primary + '10',
-    },
-    editText: {
-        fontSize: 12,
-        fontWeight: '700' as const,
-        color: Colors.primary,
     },
     deleteBtn: {
         flexDirection: 'row',

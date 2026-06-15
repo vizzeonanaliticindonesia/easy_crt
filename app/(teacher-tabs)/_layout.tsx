@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TeacherTabLayout() {
   const { user } = useAuth();
+   const verificationStatus = Number((user as any)?.verification_status ?? 1);
+  const profileOnly = verificationStatus !== 1;
   const { getUnreadCount } = useSession();
   const unreadCount = user ? getUnreadCount(user.id) : 0;
   const insets = useSafeAreaInsets();
@@ -40,6 +42,7 @@ export default function TeacherTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          href: profileOnly ? null : undefined,
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
@@ -49,6 +52,7 @@ export default function TeacherTabLayout() {
       <Tabs.Screen
         name="sessions"
         options={{
+          href: profileOnly ? null : undefined,
           title: 'Sessions',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar" size={size} color={color} />
@@ -64,18 +68,21 @@ export default function TeacherTabLayout() {
       <Tabs.Screen
         name="subjects"
         options={{
-          href: null,
+          // href: null,
+          href: profileOnly ? null : null,
         }}
       />
       <Tabs.Screen
         name="notifications"
         options={{
-          href: null,
+          // href: null,
+          href: profileOnly ? null : null,
         }}
       />
       <Tabs.Screen
         name="earnings"
         options={{
+          href: profileOnly ? null : undefined,
           title: 'Earnings',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="cash" size={size} color={color} />

@@ -10,9 +10,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SchoolTabLayout() {
   const { user } = useAuth();
+  const verificationStatus = Number((user as any)?.verification_status ?? 1);
+  const profileOnly = verificationStatus !== 1;
   const { getUnreadCount } = useSession();
   const unreadCount = user ? getUnreadCount(user.id) : 0;
   const insets = useSafeAreaInsets();
+  
 
   return (
     <Tabs
@@ -37,6 +40,7 @@ export default function SchoolTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          href: profileOnly ? null : undefined,
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
@@ -46,6 +50,7 @@ export default function SchoolTabLayout() {
       <Tabs.Screen
         name="teachers"
         options={{
+          href: profileOnly ? null : undefined,
           title: 'Teachers',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people" size={size} color={color} />
@@ -55,28 +60,32 @@ export default function SchoolTabLayout() {
       <Tabs.Screen
         name="sessions"
         options={{
-          href: null,
+          // href: null,
+          href: profileOnly ? null : null,
         }}
       />
       <Tabs.Screen
         name="invoices"
         options={{
+          href: profileOnly ? null : undefined,
           title: 'Invoices',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="receipt" size={size} color={color} />
           ),
         }}
       />
-      <Tabs.Screen
+      {/* <Tabs.Screen
         name="documents"
         options={{
           href: null,
+          // href: profileOnly ? null : undefined,
         }}
-      />
+      /> */}
       <Tabs.Screen
         name="notifications"
         options={{
-          href: null,
+          // href: null,
+          href: profileOnly ? null : null,
         }}
       />
       <Tabs.Screen

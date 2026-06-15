@@ -129,6 +129,7 @@ const WWCC_VALUE_BY_LABEL = Object.fromEntries(
 
 type ScheduleSlotInput = {
 	id: string;
+	requestId?: number;
 	date: string;
 	startTime: string;
 	endTime: string;
@@ -186,10 +187,12 @@ export default function CreateSessionScreen() {
 	const [loading, setLoading] = useState(false);
 	const [refreshing, setRefreshing] = useState(false);
 	const [savingStep1, setSavingStep1] = useState(false);
-	const [serverSessionId, setServerSessionId] = useState<string | null>(null);
+	const [requestIds, setRequestIds] = useState<number[]>([]);
 	const [step, setStep] = useState(0);
 	const isPrivateRequest = requestType === 'Private';
 	const teacherLookupSeq = React.useRef(0);
+
+	const [deletedRequestIds, setDeletedRequestIds] = useState<number[]>([]);
 
 	// If user switches category and current subject is not in filtered list, clear selection
 	const loadCategories = React.useCallback(async () => {
@@ -206,8 +209,9 @@ export default function CreateSessionScreen() {
 	}, []);
 
 	const loadTeachers = React.useCallback(async () => {
+		if (!requestIds || requestIds.length === 0) return;
 		try {
-			const res = await getTeachers(serverSessionId || '');
+			const res = await getTeachers(requestIds);
 			const list = res?.teachers ?? res?.data ?? [];
 			const nextTeachers = Array.isArray(list) ? list : [];
 			setTeachers(nextTeachers);
@@ -215,7 +219,7 @@ export default function CreateSessionScreen() {
 		} catch (e) {
 			console.error('Failed to fetch teachers:', e);
 		}
-	}, [serverSessionId]);
+	}, [requestIds]);
 
 	const loadPrivateTeacherInfo = React.useCallback(async (teacherId: string) => {
 		const trimmedTeacherId = teacherId.trim();
@@ -248,10 +252,10 @@ export default function CreateSessionScreen() {
 	}, [loadCategories]);
 
 	useEffect(() => {
-		if (serverSessionId && !isPrivateRequest) {
+		if (requestIds.length > 0 && !isPrivateRequest) {
 			loadTeachers();
 		}
-	}, [serverSessionId, loadTeachers, isPrivateRequest]);
+	}, [requestIds, loadTeachers, isPrivateRequest]);
 
 	const onRefresh = async () => {
 		setRefreshing(true);
@@ -259,7 +263,7 @@ export default function CreateSessionScreen() {
 			const refreshTasks = [loadCategories()];
 			if (isPrivateRequest) {
 				refreshTasks.push(loadPrivateTeacherInfo(teacher_id));
-			} else if (serverSessionId) {
+			} else if (requestIds.length > 0) {
 				refreshTasks.push(loadTeachers());
 			}
 			await Promise.all(refreshTasks);
@@ -323,21 +327,22 @@ export default function CreateSessionScreen() {
 	}
 
 	async function handleProceedToTeachers() {
-		// validate same as create but without teacher selection
-		console.log('Server Session ID:', serverSessionId);
-
 		const normalizedSlots = scheduleSlots.map((slot) => ({
-			date: slot.date.trim(),
+			date:      slot.date.trim(),
 			startTime: slot.startTime.trim(),
-			endTime: slot.endTime.trim(),
+			endTime:   slot.endTime.trim(),
+			requestId: (slot as any).requestId ?? null,
 		}));
-		const hasIncompleteSlot = normalizedSlots.some((slot) => !slot.date || !slot.startTime || !slot.endTime);
+
+		const hasIncompleteSlot = normalizedSlots.some(
+			(slot) => !slot.date || !slot.startTime || !slot.endTime
+		);
 
 		if (
 			!requestDate.trim() ||
-			!schoolName.trim() ||
-			!subject.trim() ||
-			!yearLevel.trim() ||
+			!schoolName.trim()  ||
+			!subject.trim()     ||
+			!yearLevel.trim()   ||
 			!requestType.trim() ||
 			hasIncompleteSlot
 		) {
@@ -350,21 +355,15 @@ export default function CreateSessionScreen() {
 				notify('Error', 'Please enter a teacher ID.');
 				return;
 			}
-
 			if (teacherLoading) {
 				notify('Error', 'Please wait until teacher information is loaded.');
 				return;
 			}
-
 			if (!teacherInfo) {
 				notify('Error', 'Teacher not found');
 				return;
 			}
-		} else if (
-			!accreditationLevel.trim() ||
-			!qualificationLevel.trim() ||
-			!distance.trim()
-		) {
+		} else if (!accreditationLevel.trim() || !qualificationLevel.trim() || !distance.trim()) {
 			notify('Error', 'Please fill in all session details and complete each schedule slot.');
 			return;
 		}
@@ -373,51 +372,74 @@ export default function CreateSessionScreen() {
 
 		setSavingStep1(true);
 		try {
+			const activeRequestIds = normalizedSlots.map((s) => s.requestId).filter(Boolean) as number[];
+
 			const payload = {
-				id: serverSessionId || null,
-				request_date: requestDate.trim() || normalizedSlots[0]?.date || null,
-				teacher_id: teacher_id.trim() || null,
-				school_id: school.id,
-				subject_name: subject.trim() || null,
-				year_level: yearLevel.trim() || null,
-				request_type: requestType.trim() || null,
-				accreditation_level: isPrivateRequest ? null : accreditationLevel.trim() || null,
-				qualification_level: isPrivateRequest ? null : qualificationLevel.trim() || null,
-				distance: isPrivateRequest ? null : (distance.trim() ? Number(distance.trim()) : null),
-				require_wwcc: isPrivateRequest ? null : requireWwcc.trim() || null,
-				notes: notes.trim() || null,
-				schedules: scheduleSlots.map((slot) => ({
-					date: slot.date.trim(),
-					start_time: slot.startTime.trim(),
-					end_time: slot.endTime.trim(),
+				// request_ids: array of existing ids, aligned dengan schedules[]
+				// Kosong berarti semua slot di-INSERT
+				// request_ids: normalizedSlots.map((s) => s.requestId).filter(Boolean),
+				request_ids: [...activeRequestIds, ...deletedRequestIds],
+
+				request_date:         requestDate.trim() || normalizedSlots[0]?.date || null,
+				teacher_id:           teacher_id.trim() || null,
+				school_id:            school.id,
+				subject_name:         subject.trim() || null,
+				year_level:           yearLevel.trim() || null,
+				request_type:         requestType.trim() || null,
+				accreditation_level:  isPrivateRequest ? null : accreditationLevel.trim() || null,
+				qualification_level:  isPrivateRequest ? null : qualificationLevel.trim() || null,
+				distance:             isPrivateRequest ? null : (distance.trim() ? Number(distance.trim()) : null),
+				notes:                notes.trim() || null,
+
+				// schedules[] harus aligned index-per-index dengan request_ids[]
+				schedules: normalizedSlots.map((slot) => ({
+					date:       slot.date,
+					start_time: slot.startTime,
+					end_time:   slot.endTime,
 				})),
 			};
 
-			if (serverSessionId) {
-				// UPDATE
-				await updateSession(payload);
+			// Selalu pakai updateSession jika sudah ada requestIds,
+			// insertSession jika belum ada sama sekali
+			const isUpdate = requestIds.length > 0;
+			const res = isUpdate
+				? await updateSession(payload as any)
+				: await insertSession(payload as any);
+
+			// Ambil returned request_ids dari response
+			let returnedIds: number[] = [];
+			if (Array.isArray(res?.request_ids))
+				returnedIds = res.request_ids.map((v: any) => Number(v));
+			else if (Array.isArray(res?.data?.request_ids))
+				returnedIds = res.data.request_ids.map((v: any) => Number(v));
+			else if (res?.request_id)
+				returnedIds = [Number(res.request_id)];
+
+			if (returnedIds.length > 0) {
+				setRequestIds(returnedIds);
+				setDeletedRequestIds([]);
+
+				// Pasangkan request_id ke masing-masing slot (urutan sama dengan schedules[])
+				setScheduleSlots((prev) =>
+					prev.map((slot, idx) => ({
+						...slot,
+						requestId: returnedIds[idx] ?? (slot as any).requestId,
+					}))
+				);
+
 				if (!isPrivateRequest) {
-					const teachersRes = await getTeachers(serverSessionId);
-					const nextTeachers = teachersRes?.teachers ?? teachersRes?.data ?? [];
+					const teachersRes = await getTeachers(returnedIds);
+					const nextTeachers: any[] = teachersRes?.teachers ?? teachersRes?.data ?? [];
 					setTeachers(Array.isArray(nextTeachers) ? nextTeachers : []);
-					setSelectedTeacherIds((Array.isArray(nextTeachers) ? nextTeachers : []).map((teacher: any) => String(teacher.id)));
-				}
-			} else {
-				// CREATE
-				const res = await insertSession(payload);
-				const request_id = res?.request_id || res?.data?.id || res?.session_id || res?.booking_id || null;
-				if (request_id) setServerSessionId(String(request_id));
-				if (!isPrivateRequest && request_id) {
-					const teachersRes = await getTeachers(request_id);
-					const nextTeachers = teachersRes?.teachers ?? teachersRes?.data ?? [];
-					setTeachers(Array.isArray(nextTeachers) ? nextTeachers : []);
-					setSelectedTeacherIds((Array.isArray(nextTeachers) ? nextTeachers : []).map((teacher: any) => String(teacher.id)));
+					setSelectedTeacherIds(
+						(Array.isArray(nextTeachers) ? nextTeachers : []).map((t: any) => String(t.id))
+					);
 				}
 			}
-			// try to extract id from response if available
+
 			setStep(1);
 		} catch (e: any) {
-			console.error('Failed to save session to server:', e);
+			console.error('Failed to save session:', e);
 			notify('Error', e?.message || 'Failed to save session details');
 		} finally {
 			setSavingStep1(false);
@@ -428,8 +450,20 @@ export default function CreateSessionScreen() {
 		setScheduleSlots((prev) => prev.map((slot) => (slot.id === slotId ? { ...slot, [field]: value } : slot)));
 	}
 
+	// function removeScheduleSlot(slotId: string) {
+	// 	setScheduleSlots((prev) => (prev.length === 1 ? prev : prev.filter((slot) => slot.id !== slotId)));
+	// }
+
 	function removeScheduleSlot(slotId: string) {
-		setScheduleSlots((prev) => (prev.length === 1 ? prev : prev.filter((slot) => slot.id !== slotId)));
+		setScheduleSlots((prev) => {
+			if (prev.length === 1) return prev;
+			const slot = prev.find((s) => s.id === slotId);
+			// Simpan requestId-nya kalau ada, supaya backend bisa delete
+			if (slot?.requestId) {
+				setDeletedRequestIds((ids) => [...ids, slot.requestId!]);
+			}
+			return prev.filter((s) => s.id !== slotId);
+		});
 	}
 
 	async function handleCreate() {
@@ -446,8 +480,13 @@ export default function CreateSessionScreen() {
 
 		setLoading(true);
 		try {
+			if (!requestIds || requestIds.length === 0) {
+				notify('Error', 'No request ids available. Please create the session first.');
+				return;
+			}
+
 			await sendRequest({
-				sessionId: serverSessionId || '',
+				requestIds,
 				teacherIds,
 			});
 			notify('Success', 'Teaching session request has been created and sent successfully.', () => router.replace('/sessions'));
@@ -622,7 +661,7 @@ export default function CreateSessionScreen() {
 									keyboardType="numeric"
 								/>
 
-								<AppSearchSelectField
+								{/* <AppSearchSelectField
 									label="Require WWCC"
 									value={WWCC_LABEL_BY_VALUE[requireWwcc] || ''}
 									onChange={(label) => setRequireWwcc(WWCC_VALUE_BY_LABEL[label] || '')}
@@ -630,7 +669,7 @@ export default function CreateSessionScreen() {
 									placeholder="Select WWCC requirement"
 									searchPlaceholder="Search WWCC..."
 									closeOnSelect
-								/>
+								/> */}
 
 								<AppField
 									label="Notes (optional)"

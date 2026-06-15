@@ -1,8 +1,9 @@
 import React from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// import * as Linking from 'expo-linking';
 import { Colors } from '@/constants/Colors';
 import { notify } from '@/lib/dialogs';
 import {
@@ -16,12 +17,16 @@ import {
     AppUploadArea,
     useResponsiveSpacing,
 } from '@/components/ui/AppPrimitives';
-import { insertSchoolDocument } from '@/lib/services/school';
+import { editSchoolDocument, getSchoolDocuments } from '@/lib/services/school';
+import { getTeacherDocuments } from '@/lib/services/teacher';
 import { useAuth } from '@/contexts/AuthContext';
+import { WebView } from 'react-native-webview';
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'react-native';
 
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png']; // tipe file
-const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png']; // ekstensi file
+const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
 
 type SelectedFile = {
     name: string;
@@ -35,11 +40,14 @@ function hasAllowedExtension(fileName: string): boolean {
     return ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-export default function CreateDocumentScreen() {
+export default function EditDocumentScreen() {
     const router = useRouter();
+    const params = useLocalSearchParams();
+    const documentId = String(params.id || '');
     const insets = useSafeAreaInsets();
     const spacing = useResponsiveSpacing();
     const topPad = Platform.OS === 'web' ? 67 : insets.top;
+
     const [documentName, setDocumentName] = React.useState('');
     const [documentNumber, setDocumentNumber] = React.useState('');
     const [issuedBy, setIssuedBy] = React.useState('');
@@ -47,8 +55,67 @@ export default function CreateDocumentScreen() {
     const [expiryDate, setExpiryDate] = React.useState('');
     const [selectedFile, setSelectedFile] = React.useState<SelectedFile | null>(null);
     const [loading, setLoading] = React.useState(false);
+    const [loadingDetail, setLoadingDetail] = React.useState(false);
+    const [previewVisible, setPreviewVisible] = React.useState(false);
+
 
     const { user } = useAuth();
+
+    React.useEffect(() => {
+        async function loadDetail() {
+            try {
+                setLoadingDetail(true);
+
+                const res =
+                    user?.role == 10
+                        ? await getSchoolDocuments()
+                        : await getTeacherDocuments();
+
+                const documents =
+                    user?.role == 10
+                        ? res?.documents || res?.data?.documents || []
+                        : res?.data || [];
+
+                const data = documents.find((item: any) => String(item.id) === String(documentId));
+
+                if (!data) {
+                    notify('Error', 'Document not found.');
+                    return;
+                }
+
+                setDocumentName(data.document_name || '');
+                setDocumentNumber(data.document_number || '');
+                setIssuedBy(data.issued_by || '');
+                setIssueDate(data.issue_date || '');
+                setExpiryDate(data.expiry_date || '');
+
+                if (data.file_url || data.file_path) {
+                    const fileUrl = data.file_url ? data.file_url : `https://teacher-relief.kreatifa.com/${data.file_path}`;
+                    const fileName = fileUrl.split('/').pop() || 'document';
+                    const ext = fileName.split('.').pop()?.toLowerCase();
+                    const mimeType = ext === 'pdf' ? 'application/pdf'
+                        : ext === 'png' ? 'image/png'
+                        : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg'
+                        : 'application/pdf';
+
+                    setSelectedFile({
+                        name: fileName,
+                        uri: fileUrl,
+                        mimeType, // ✅ deteksi dari ekstensi
+                        size: 0,
+                    });
+                }
+            } catch {
+                notify('Error', 'Failed to load document detail.');
+            } finally {
+                setLoadingDetail(false);
+            }
+        }
+
+        if (documentId) {
+            loadDetail();
+        }
+    }, [documentId, user?.role]);
 
     async function pickFile() {
         try {
@@ -61,7 +128,7 @@ export default function CreateDocumentScreen() {
                 return;
             }
 
-            const asset = result.assets[0]; // ambil file pertama yang dipilih dan disimpan di variabel asset
+            const asset = result.assets[0];
             const mimeType = asset.mimeType || '';
             const fileSize = asset.size || 0;
             const validMime = ALLOWED_MIME_TYPES.includes(mimeType);
@@ -94,44 +161,41 @@ export default function CreateDocumentScreen() {
             return;
         }
 
-        if (!selectedFile) {
-            notify('Error', 'Please upload a file first.');
-            return;
-        }
-
         setLoading(true);
 
         try {
-            // FormData is prepared here so integration with API can be added later without changing form flow.
             const formData = new FormData();
+
             formData.append('document_name', documentName.trim());
             formData.append('document_number', documentNumber.trim());
             formData.append('issued_by', issuedBy.trim());
             formData.append('issue_date', issueDate);
             formData.append('expiry_date', expiryDate);
-            formData.append('file', {
-                uri: selectedFile.uri,
-                name: selectedFile.name,
-                type: selectedFile.mimeType,
-            } as any);
 
-            await insertSchoolDocument({
-                document_name: documentName.trim(),
-                document_number: documentNumber.trim() ,
-                issued_by: issuedBy.trim(),
-                issue_date: issueDate,
-                expiry_date: expiryDate,
-                fileUri: selectedFile.uri,
-                fileMimeType: selectedFile.mimeType,
-                fileSize: selectedFile.size,
-            });
-            
-            notify('Success', 'Document uploaded successfully.', () => {
+            if (selectedFile && !selectedFile.uri.includes('/uploads')) {
+                if (Platform.OS === 'web') {
+                    const resBlob = await fetch(selectedFile.uri);
+                    const blob = await resBlob.blob();
+                    formData.append('file_upload', blob, selectedFile.name);
+                } else {
+                    formData.append(
+                        'file_upload',
+                        {
+                            uri: selectedFile.uri,
+                            name: selectedFile.name,
+                            type: selectedFile.mimeType,
+                        } as any
+                    );
+                }
+            }
+
+            await editSchoolDocument(documentId, formData);
+
+            notify('Success', 'Document updated successfully.', () => {
                 if (user?.role == 10) {
                     router.replace({
-                        pathname: '/(school-tabs)/documents',
+                        pathname: '/(school-tabs)/documents' as any,
                         params: { refresh: Date.now().toString() },
-
                     });
                 } else {
                     router.replace({
@@ -141,17 +205,37 @@ export default function CreateDocumentScreen() {
                 }
             });
         } catch {
-            notify('Error', 'Upload failed. Please try again.');
+            notify('Error', 'Failed to update document. Please try again.');
         } finally {
             setLoading(false);
         }
     }
 
+    if (loadingDetail) {
+        return (
+            <View
+                style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                }}
+            >
+                <Text>Loading...</Text>
+            </View>
+        );
+    }
+
     return (
         <View style={[styles.container, { paddingTop: topPad }]}>
             <AppTopBar
-                title="Create Document"
-                onBack={() => router.back()}
+                title="Edit Document"
+                onBack={() =>
+                router.replace(
+                    user?.role == 10
+                        ? '/(school-tabs)/documents'
+                        : '/(teacher-tabs)/documents' as any
+                )   
+}
                 horizontalPadding={spacing.horizontal}
                 verticalPadding={spacing.topBarVertical}
                 iconButtonSize={spacing.iconButtonSize}
@@ -167,8 +251,8 @@ export default function CreateDocumentScreen() {
                 keyboardShouldPersistTaps="handled"
             >
                 <AppPageHeader
-                    title="Upload New Document"
-                    subtitle="Fill document details and attach a PDF/JPG/PNG file"
+                    title="Edit Document"
+                    subtitle="Update document details and attach a PDF/JPG/PNG file"
                     style={{ marginBottom: spacing.sectionGap }}
                 />
 
@@ -215,6 +299,7 @@ export default function CreateDocumentScreen() {
 
                     <View style={styles.uploadBlock}>
                         <Text style={styles.label}>Upload File</Text>
+
                         <AppUploadArea
                             label="Choose PDF/JPG/PNG"
                             description="Maximum file size: 2MB"
@@ -222,16 +307,68 @@ export default function CreateDocumentScreen() {
                             tone="secondary"
                             disabled={loading}
                         />
+
                         {selectedFile ? (
-                            <View style={styles.filePreview}>
+                            <TouchableOpacity
+                                style={styles.filePreview}
+                                activeOpacity={0.8}
+                                onPress={() => setPreviewVisible(true)} // ✅
+                            >
                                 <Text style={styles.fileName}>{selectedFile.name}</Text>
-                                <Text style={styles.fileMeta}>{(selectedFile.size / 1024).toFixed(1)} KB</Text>
-                            </View>
+                                {selectedFile.size > 0 && (
+                                    <Text style={styles.fileMeta}>{(selectedFile.size / 1024).toFixed(1)} KB</Text>
+                                )}
+                            </TouchableOpacity>
                         ) : null}
+
+                        <Modal
+                            visible={previewVisible}
+                            animationType="slide"
+                            onRequestClose={() => setPreviewVisible(false)}
+                        >
+                            <View style={{ flex: 1, backgroundColor: Colors.background }}>
+                                {/* Header */}
+                                <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    padding: 16,
+                                    paddingTop: topPad,
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: Colors.border,
+                                }}>
+                                    <TouchableOpacity onPress={() => setPreviewVisible(false)}>
+                                        <Ionicons name="close" size={24} color={Colors.text} />
+                                    </TouchableOpacity>
+                                    <Text style={{
+                                        fontSize: 15,
+                                        fontWeight: '700',
+                                        color: Colors.text,
+                                        marginLeft: 12,
+                                        flex: 1,
+                                    }} numberOfLines={1}>
+                                        {selectedFile?.name}
+                                    </Text>
+                                </View>
+
+                                {/* Content */}
+                                {selectedFile?.mimeType?.startsWith('image/') ? (
+                                    <Image
+                                        source={{ uri: selectedFile.uri }}
+                                        style={{ flex: 1 }}
+                                        resizeMode="contain"
+                                    />
+                                ) : (
+                                    <WebView
+                                        source={{ uri: selectedFile?.uri || '' }}
+                                        style={{ flex: 1 }}
+                                    />
+                                )}
+                            </View>
+                        </Modal>
                     </View>
 
                     <AppButton
-                        title="Submit"
+                        title="Update"
                         onPress={handleSubmit}
                         variant="secondary"
                         loading={loading}

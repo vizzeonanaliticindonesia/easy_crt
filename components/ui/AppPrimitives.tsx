@@ -22,7 +22,7 @@ import { Colors } from '@/constants/Colors';
 import { SessionStatus } from '@/types';
 
 type CardVariant = 'surface' | 'primaryTint' | 'secondaryTint' | 'warningTint';
-type ButtonVariant = 'primary' | 'secondary' | 'outline';
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'success';
 type ButtonSize = 'md' | 'lg';
 type StatusTone = 'pending' | 'active' | 'complete' | 'declined' | 'primary' | 'secondary' | 'error' | 'neutral';
 type ChipTone = 'primary' | 'secondary' | 'danger' | 'warning' | 'neutral';
@@ -49,7 +49,7 @@ export type SessionStatusVisual = {
 	bg: string;
 };
 
-export const SESSION_STATUS_VISUALS: Record<SessionStatus, SessionStatusVisual> = {
+export const SESSION_STATUS_VISUALS: Record<string, SessionStatusVisual> = {
 	pending: { label: 'Pending', color: Colors.statusPending, bg: Colors.warningBg },
 	accepted: { label: 'Accepted', color: Colors.statusActive, bg: Colors.primaryBg },
 	checked_in: { label: 'Checked In', color: Colors.statusActive, bg: Colors.primaryBg },
@@ -62,7 +62,9 @@ export const SESSION_STATUS_VISUALS: Record<SessionStatus, SessionStatusVisual> 
 	reviewed: { label: 'Reviewed', color: Colors.statusComplete, bg: Colors.secondaryBg },
 	declined: { label: 'Declined', color: Colors.statusDeclined, bg: Colors.errorBg },
 	open: { label: 'Open', color: Colors.statusActive, bg: Colors.primaryBg },
-	closed: { label: 'Closed', color: Colors.statusComplete, bg: Colors.successBg },
+	closed: { label: 'Closed', color: Colors.textSecondary, bg: Colors.borderLight },
+	attended: { label: 'Attended', color: Colors.success, bg: Colors.successBg },
+	unattended: { label: 'Unable to Attend', color: Colors.statusDeclined, bg: Colors.errorBg },
 };
 
 const STATUS_TONE_VISUALS: Record<StatusTone, { color: string; bg: string }> = {
@@ -101,6 +103,25 @@ export function getSessionStatusVisual(status: SessionStatus): SessionStatusVisu
 		color: Colors.textMuted,
 		bg: Colors.borderLight,
 	};
+}
+
+export function resolveSessionStatus(
+	status?: SessionStatus | string | number | null,
+	isConfirm?: string | number | null
+): SessionStatus {
+	const confirmVal = isConfirm !== undefined && isConfirm !== null ? String(isConfirm).trim() : '';
+	if (confirmVal === '1') return 'attended';
+	if (confirmVal === '2') return 'unattended';
+
+	const s = status !== undefined && status !== null ? String(status).trim() : '';
+	if (s === '0') return 'open';
+	if (s === '1') return 'closed';
+
+	if (s && Object.prototype.hasOwnProperty.call(SESSION_STATUS_VISUALS, s)) {
+		return s as SessionStatus;
+	}
+
+	return 'open';
 }
 
 export function useResponsiveSpacing(): ResponsiveSpacing {
@@ -264,6 +285,18 @@ function getButtonVariantStyle(variant: ButtonVariant): {
 				borderColor: Colors.border,
 			},
 			textColor: Colors.primary,
+			spinnerColor: Colors.primary,
+		};
+	}
+	
+	if (variant === 'success') {
+		return {
+			container: {
+				backgroundColor: Colors.successBg,
+				borderWidth: 1,
+				borderColor: Colors.border,
+			},
+			textColor: Colors.success,
 			spinnerColor: Colors.primary,
 		};
 	}

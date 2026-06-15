@@ -65,6 +65,8 @@ export default function SessionConfirmationsScreen() {
         };
     }, [items]);
 
+    // console.log('is confirm: ', booking.is_confirm);
+
     return (
         <ScrollView
             style={styles.container}

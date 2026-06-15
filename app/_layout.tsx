@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SessionProvider } from '@/contexts/SessionContext';
 import { Colors } from '@/constants/Colors';
 import AppDialogProvider from '@/components/ui/AppDialogProvider';
+import { StripeProvider } from '@/lib/stripe-mock';
+
 
 function RootNavigation() {
 	const { user, isLoading } = useAuth();
@@ -47,8 +49,43 @@ function RootNavigation() {
 			const role = user.role;
 			const isTeacherRole = role === 9 ;
 			const isSchoolRole = role === 10 ;
+			const verificationStatus = Number((user as any)?.verification_status ?? 1);
 
-			console.log('[RootNavigation] user accepted terms, role=', role, 'firstSegment=', firstSegment);
+			// console.log('[RootNavigation] user accepted terms, role=', role, 'firstSegment=', firstSegment);
+			// console.log({pathname,segments});
+			// Verification guard
+			if (verificationStatus !== 1) {
+
+				// const inTeacherProfile =
+				// 	pathname === '/(teacher-tabs)/profile';
+
+				// const inSchoolProfile =
+				// 	pathname === '/(school-tabs)/profile';
+
+				const currentScreen = segments[1];
+				const currentRoot = segments[0];
+
+				const allowedScreen =
+					currentScreen === 'profile' ||
+					currentScreen === 'documents' ||
+					currentRoot === 'create-document' ||
+					currentRoot === 'edit-document';
+
+				if (!allowedScreen) {
+
+					if (isTeacherRole) {
+						router.replace('/(teacher-tabs)/profile');
+						return;
+					}
+
+					if (isSchoolRole) {
+						router.replace('/(school-tabs)/profile');
+						return;
+					}
+
+				}
+			}
+			
 			if (isTeacherRole && inSchoolTabs) {
 				console.log('[RootNavigation] teacher in school tabs - redirect to teacher-tabs');
 				router.replace('/(teacher-tabs)');
@@ -97,16 +134,18 @@ function RootNavigation() {
 }
 
 export default function RootLayout() {
-	return (
-		<SafeAreaProvider>
-			<AuthProvider>
-				<SessionProvider>
-					<AppDialogProvider>
-						<RootNavigation />
-						<StatusBar style="dark" />
-					</AppDialogProvider>
-				</SessionProvider>
-			</AuthProvider>
-		</SafeAreaProvider>
-	);
+    return (
+        <SafeAreaProvider>
+            <StripeProvider publishableKey="pk_test_51Te5YgFLd8rQO6t7tPiECI7FAat99Upn0xGdhtBj4i05zyCZwxpGXWNwo3DV9G6vHdQK4CHIBc4l0WgC8xwO1Jff00kK5xkVv2">
+                <AuthProvider>
+                    <SessionProvider>
+                        <AppDialogProvider>
+                            <RootNavigation />
+                            <StatusBar style="dark" />
+                        </AppDialogProvider>
+                    </SessionProvider>
+                </AuthProvider>
+            </StripeProvider>
+        </SafeAreaProvider>
+    );
 }

@@ -8,6 +8,7 @@ import {
     TextInput,
     View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
@@ -34,6 +35,8 @@ export default function SessionDetailScreen() {
 
     const [booking, setBooking] = useState<any>(null);
     const [schedules, setSchedules] = useState<any[]>([]);
+    const [reviewVisible, setReviewVisible] = useState(false);
+    const [reviewData, setReviewData] = useState<any>(null);
 
     const [rejectVisible, setRejectVisible] = useState(false);
     const [selectedScheduleId, setSelectedScheduleId] = useState<string | number | null>(null);
@@ -63,7 +66,7 @@ export default function SessionDetailScreen() {
                 notify('Error', 'Failed to confirm attendance.');
                 return;
             }
-            await fetchDetail(); // ✅ re-fetch supaya booking status ikut update
+            await fetchDetail(); 
         } catch (err) {
             console.error(err);
             notify('Error', 'Something went wrong.');
@@ -111,6 +114,30 @@ export default function SessionDetailScreen() {
 
     const bookingStatus = getStatusVisual(booking.booking_status);
 
+    function handleReview() {
+        if (booking?.review_id) {
+            setReviewData(booking);
+            setReviewVisible(true);
+            return;
+        }
+        router.push({ pathname: '/review-teacher', params: { id: booking.id } });
+    }
+    console.log(booking);
+
+    // function handleReview() {
+    //     // kalau sudah ada review → tampilkan modal view review
+    //     if (booking?.review_id) {
+    //         setReviewData(booking);
+    //         setReviewVisible(true);
+    //         return;
+    //     }
+    //     // belum ada review → ke halaman isi review
+    //     router.push({ 
+    //         pathname: '/review-teacher', 
+    //         params: { id: booking?.booking_id } 
+    //     });
+    // }
+
     return (
         <View style={[styles.container, { paddingTop: topPad }]}>
             <ScrollView
@@ -149,6 +176,50 @@ export default function SessionDetailScreen() {
                     </View>
                     <Text style={styles.cardMeta}>Teacher: {booking.teacher_name || '-'}</Text>
                     <Text style={styles.cardMeta}>School: {booking.school_name || '-'}</Text>
+                    <View style={styles.infoRow}>
+                        <Text style={styles.infoLabel}>Teacher Status</Text>
+
+                        <View
+                            style={[
+                            styles.statusBadge,
+                            booking.is_confirm == 1
+                                ? { backgroundColor: '#DCFCE7' }
+                                : booking.is_confirm == 2
+                                ? { backgroundColor: '#FEE2E2' }
+                                : { backgroundColor: '#E5E7EB' },
+                            ]}
+                        >
+                            <Text
+                            style={[
+                                styles.statusBadgeText,
+                                {
+                                color:
+                                    booking.is_confirm == 1
+                                    ? '#15803D'
+                                    : booking.is_confirm == 2
+                                    ? '#DC2626'
+                                    : '#6B7280',
+                                },
+                            ]}
+                            >
+                            {booking.is_confirm == 1
+                                ? 'Available to Attend'
+                                : booking.is_confirm == 2
+                                ? 'Unable to Attend'
+                                : 'Pending Confirmation'}
+                            </Text>
+                        </View>
+                    </View>
+                    {/* Taruh setelah cardMeta School */}
+                    {booking.booking_status == '1' && ( // sesuaikan value status complete di project kamu
+                        <AppButton
+                            title={booking.review_id ? 'View Review' : 'Leave a Review'}
+                            onPress={handleReview}
+                            variant={booking.review_id ? 'outline' : 'secondary'}
+                            size="md"
+                            style={{ marginTop: 12 }}
+                        />
+                    )}
                 </View>
 
                 <View style={styles.scheduleSection}>
@@ -191,6 +262,61 @@ export default function SessionDetailScreen() {
                                 style={[styles.modalBtn, styles.rejectSubmitBtn]}
                             />
                         </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal visible={reviewVisible} transparent animationType="fade" onRequestClose={() => setReviewVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalCard, { padding: 20 }]}>
+                        <Text style={styles.modalTitle}>Review</Text>
+                        <ScrollView>
+                            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+                                <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.text, textAlign: 'center' }}>
+                                    {reviewData?.teacher_name || '-'}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 4 }}>
+                                    {reviewData?.subject_name || '-'} - {reviewData?.request_date || '-'}
+                                </Text>
+                            </View>
+
+                            {/* Bintang */}
+                            <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 6 }}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <Ionicons
+                                        key={star}
+                                        name={star <= (reviewData?.teacher_rating || 0) ? 'star' : 'star-outline'}
+                                        size={28}
+                                        color={Colors.warning}
+                                    />
+                                ))}
+                            </View>
+
+                            <Text style={{ textAlign: 'center', fontSize: 13, color: Colors.textSecondary, marginBottom: 12 }}>
+                                {reviewData?.teacher_rating || 0} / 5
+                            </Text>
+
+                            {/* Komentar */}
+                            <View style={{
+                                borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+                                padding: 10, backgroundColor: Colors.background, marginBottom: 10,
+                            }}>
+                                <Text style={{ fontSize: 13, color: Colors.text }}>
+                                    {reviewData?.teacher_review || 'No review available'}
+                                </Text>
+                            </View>
+
+                            <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: 'right', marginBottom: 10 }}>
+                                {reviewData?.created_at_review || ''}
+                            </Text>
+                        </ScrollView>
+
+                        <AppButton
+                            title="Close"
+                            onPress={() => setReviewVisible(false)}
+                            variant="outline"
+                            size="md"
+                        />
                     </View>
                 </View>
             </Modal>
@@ -290,5 +416,17 @@ const styles = StyleSheet.create({
     },
     rejectSubmitBtn: {
         backgroundColor: Colors.error,
+    },
+
+    infoRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 6,
+    },
+
+        infoLabel: {
+        fontSize: 13,
+        color: Colors.textSecondary,
     },
 });

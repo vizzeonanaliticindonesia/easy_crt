@@ -39,6 +39,7 @@ export default function TeacherCard({ teacher, selected, onPress, onToggleSelect
 					</View>
 					<View style={styles.info}>
 						<Text style={styles.name}>{teacher.first_name} {teacher.last_name}</Text>
+						<Text style={styles.email}>{teacher.email}</Text>
 						<Text style={styles.subjects} numberOfLines={1}>
 							{teacher.subject_name}
 						</Text>
@@ -116,6 +117,10 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 		fontWeight: '600' as const,
 		color: Colors.text,
+	},
+	email: {
+		fontSize: 14,
+		color: Colors.textSecondary,
 	},
 	subjects: {
 		fontSize: 13,

@@ -11,17 +11,16 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
+import { useStripe, CardField } from '@/lib/stripe-mock';
+import type { CardFieldInput } from '@stripe/stripe-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { notify } from '@/lib/dialogs';
-import { invoicesRepository } from '@/lib/repositories/invoicesRepository';
-import { resetInvoices } from '@/lib/invoices';
 import { useIsFocused } from '@react-navigation/native';
-import { InvoicePaymentMethod, InvoiceReasonLog, InvoiceRecord, InvoiceStatus } from '@/types';
+import { InvoicePaymentMethod, InvoiceRecord, InvoiceStatus } from '@/types';
 import {
     AppButton,
     AppCard,
@@ -33,9 +32,9 @@ import {
 } from '@/components/ui/AppPrimitives';
 import { getInvoiceData, getPaymentLogs, insertInvoice } from '@/lib/services/school';
 
-type FilterStatus = 'all' | 'unpaid' | 'waiting_confirmation' | 'paid' | 'rejected';
+type FilterStatus = 'all' | 'unpaid' | 'paid';
 
-const STATUS_FILTERS: FilterStatus[] = ['all', 'unpaid', 'waiting_confirmation', 'paid', 'rejected'];
+const STATUS_FILTERS: FilterStatus[] = ['all', 'unpaid', 'paid'];
 
 function formatCurrency(amount: number): string {
     return `$${amount}`;
@@ -75,10 +74,9 @@ function getStatusTone(filteredInvoice: InvoiceStatus): 'pending' | 'complete' |
 
 function getFilterLabel(status: FilterStatus): string {
     if (status === 'all') return 'All';
-    if (status === 'waiting_confirmation') return 'Waiting';
+    if (status === 'unpaid') return 'Unpaid';
     if (status === 'paid') return 'Paid';
-    if (status === 'rejected') return 'Rejected';
-    return 'Unpaid';
+    return 'All';
 }
 
 function getDefaultProofName(bookingId: string): string {
@@ -104,16 +102,11 @@ export default function SchoolInvoicesScreen() {
 
     const [paymentModalVisible, setPaymentModalVisible] = useState(false);
     const [paymentTarget, setPaymentTarget] = useState<InvoiceRecord | null>(null);
-    const [paymentMethod, setPaymentMethod] = useState<InvoicePaymentMethod>('credit_card');
-    const [paymentProofFileName, setPaymentProofFileName] = useState('');
-    const [paymentProofUri, setPaymentProofUri] = useState('');
-    const [paymentProofMimeType, setPaymentProofMimeType] = useState('');
+    const { createPaymentMethod } = useStripe();
+    const [cardDetails, setCardDetails] = useState<CardFieldInput.Details | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
     const [stats, setStats] = useState({ total: 0, unpaid: 0, waiting: 0, paid: 0 });
-    
-    const [reviewVisible, setReviewVisible] = useState(false);
-    const [reviewData, setReviewData] = useState<any>(null);
 
     // Fungsi refresh data
     const refreshData = useCallback(async () => {
@@ -138,24 +131,6 @@ export default function SchoolInvoicesScreen() {
             setRefreshing(false);
         }
     }, [refreshData]);
-
-    // const loadInvoices = useCallback(async () => {
-    //     if (!user || user.role !== 9) {
-    //         setInvoices([]);
-    //         setLoading(false);
-    //         return;
-    //     }
-
-    //     setLoading(true);
-    //     try {
-    //         const items = await getInvoiceData();
-    //         setFilteredInvoices(items.invoice);
-    //     } catch {
-    //         notify('Error', 'Failed to load invoices.');
-    //     } finally {
-    //         setLoading(false);
-    //     }
-    // }, [user]);
 
     useEffect(() => {
         if (isFocused) {
@@ -207,9 +182,7 @@ export default function SchoolInvoicesScreen() {
 
     function openPayModal(item: InvoiceRecord) {
         setPaymentTarget(item);
-        setPaymentMethod(item.paymentMethod || 'credit_card');
-        setPaymentProofFileName(item.paymentProofFileName || '');
-        setPaymentProofUri('');
+        setCardDetails(null);
         setPaymentModalVisible(true);
     }
 
@@ -217,106 +190,54 @@ export default function SchoolInvoicesScreen() {
         if (submitting) return;
         setPaymentModalVisible(false);
         setPaymentTarget(null);
-        setPaymentProofUri('');
-    }
-
-    async function handlePickPaymentProof() {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'image/jpeg', 'image/png'],
-                copyToCacheDirectory: true,
-                multiple: false,
-            });
-
-            if (result.canceled || !result.assets?.[0]) return;
-
-            const file = result.assets[0] as any;
-            const name = file.name || getDefaultProofName(paymentTarget?.booking_id || 'proof');
-            const uri = file.uri || '';
-            const mime = String(file.mimeType || file.type || file.contentType || '');
-
-            setPaymentProofFileName(name);
-            setPaymentProofUri(uri);
-            setPaymentProofMimeType(mime);
-        } catch (err) {
-            console.error(err);
-            notify('Error', 'Failed to pick payment proof file.');
-        }
+        setCardDetails(null);
     }
 
     async function handleSubmitPayment() {
         if (!paymentTarget) return;
 
-        if (!paymentProofFileName.trim()) {
-            notify('Error', 'Please attach payment proof file.');
+        if (!cardDetails?.complete) {
+            notify('Error', 'Please enter complete card details.');
             return;
         }
 
         setSubmitting(true);
         try {
-            const updated = await insertInvoice(paymentTarget.id, paymentMethod, {
-                fileUri: paymentProofUri,
-                fileMimeType: paymentProofMimeType || 'application/octet-stream',
-                fileName: paymentProofFileName,
+            const { paymentMethod, error } = await createPaymentMethod({
+                paymentMethodType: 'Card',
+                paymentMethodData: { billingDetails: {} },
             });
 
-            //update state 
-            setInvoices(prev =>
-                prev.map(i => i.id === updated.id ? updated : i)
-            );
+            if (error || !paymentMethod) {
+                notify('Error', error?.message || 'Failed to process card.');
+                return;
+            }
+
+            console.log('PAYMENT TARGET:', paymentTarget.id);
+            console.log('PAYMENT METHOD:', paymentMethod.id);
+            console.log('CALLING INSERT INVOICE');
+            await insertInvoice(paymentTarget.id, paymentMethod.id);
 
             setPaymentModalVisible(false);
+            notify('Success', 'Payment completed successfully.');
+            await refreshData();
 
-            notify('Submitted', 'Payment proof uploaded. Invoice is now waiting confirmation.');
-            // refresh the invoice list
-            await refreshData();        
-        } catch (err) {
-            console.error(err);
-            notify('Error', 'Failed to submit payment proof.');
+        } catch (err: any) {
+
+            console.log(
+                'PAYMENT ERROR:',
+                JSON.stringify(err?.response?.data, null, 2)
+            );
+
+            notify(
+                'Error',
+                err?.response?.data?.message ||
+                err?.message ||
+                'Failed to submit payment.'
+            );
         } finally {
-            setSubmitting(false);
+                    setSubmitting(false);
         }
-    }
-
-    async function simulatePaid(item: InvoiceRecord) {
-        try {
-            const updated = await invoicesRepository.updateStatus(
-                item.id,
-                'paid',
-                'Payment verified by finance team.'
-            );
-
-            setInvoices(prev =>
-                prev.map(i => i.id === updated.id ? updated : i)
-            );
-
-            notify('Success', 'Invoice marked as paid.');
-            await refreshData();
-        } catch (err) {
-            console.error(err);
-            notify('Error', 'Failed to update invoice status.');
-        }
-    }
-
-    async function handleResetDemoData() {
-        try {
-            const items = await resetInvoices();
-            setInvoices(items.filter((item) => item.schoolId === user?.id));
-            notify('Reset', 'Dummy invoice data restored for testing.');
-            await refreshData();
-        } catch (err) {
-            console.error(err);
-            notify('Error', 'Failed to reset dummy invoice data.');
-        }
-    }
-
-    function handleReview(item: InvoiceRecord) {
-        if (item.review_id !== null) {
-            setReviewData(item);
-            setReviewVisible(true);
-            return;
-        }
-        router.push({ pathname: '/review-teacher', params: { id: item.booking_id } });
     }
 
     return (
@@ -393,7 +314,7 @@ export default function SchoolInvoicesScreen() {
                         label: getFilterLabel(status),
                         selected: statusFilter === status,
                         onPress: () => setStatusFilter(status),
-                        tone: status === 'paid' ? 'secondary' : status === 'rejected' ? 'danger' : status === 'waiting_confirmation' ? 'warning' : status === 'all' ? 'primary' : 'neutral',
+                    tone: status === 'paid' ? 'secondary' : status === 'all' ? 'primary' : 'neutral',
                         variant: 'soft',
                     }))}
                 />
@@ -453,13 +374,14 @@ export default function SchoolInvoicesScreen() {
 
                             {item.status === '1' ? (
                                 <AppButton
-                                    title="Review"
-                                    onPress={() => handleReview(item)}
-                                    variant="secondary"
+                                    title="Completed"
+                                    onPress={() => { }}
+                                    disabled
+                                    variant="success"
                                     size="md"
                                     style={styles.flexActionBtn}
                                 />
-                            ) : item.status === '2' ? (
+                            ) :item.status === '2' ? (
                                 <AppButton
                                     title="Waiting"
                                     onPress={() => { }}
@@ -528,76 +450,6 @@ export default function SchoolInvoicesScreen() {
                 </View>
             </Modal>
 
-            <Modal visible={reviewVisible} transparent animationType="fade" onRequestClose={() => setReviewVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalCard, { padding: spacing.cardPadding }]}>
-                        
-                        {/* Title */}
-                        <Text style={styles.modalTitle}>Review</Text>
-
-                        <ScrollView
-                            refreshControl={
-                                <RefreshControl
-                                    refreshing={refreshing}
-                                    onRefresh={onRefresh}
-                                    colors={[Colors.primary]}
-                                    tintColor={Colors.primary}
-                                    progressBackgroundColor={Colors.surface}
-                                />
-                            }
-                        >
-                            
-                            {/* 🔹 Teacher Info (API nanti) */}
-                            <View style={styles.reviewHeader}>
-                                <Text style={styles.teacherName}>
-                                    {reviewData?.first_name || '-'}, {reviewData?.last_name || '-'}
-                                </Text>
-                                <Text style={styles.sessionInfo}>
-                                    {reviewData?.subject_name || '-'} - {reviewData?.request_date || '-'}
-                                </Text>
-                            </View>
-
-                            {/* 🔹 Rating */}
-                            <View style={styles.stars}>
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                    <Ionicons
-                                        key={star}
-                                        name={star <= (reviewData?.teacher_rating || 0) ? 'star' : 'star-outline'}
-                                        size={28}
-                                        color={Colors.warning}
-                                    />
-                                ))}
-                            </View>
-
-                            <Text style={styles.ratingText}>
-                                {reviewData?.teacher_rating || 0} / 5
-                            </Text>
-
-                            {/* 🔹 Comment */}
-                            <View style={styles.commentBox}>
-                                <Text style={styles.commentText}>
-                                    {reviewData?.teacher_review || 'No review available'}
-                                </Text>
-                            </View>
-
-                            {/* 🔹 Date */}
-                            <Text style={styles.dateText}>
-                                {reviewData?.created_at_review || ''}
-                            </Text>
-
-                        </ScrollView>
-
-                        {/* Close Button */}
-                        <AppButton
-                            title="Close"
-                            onPress={() => setReviewVisible(false)}
-                            variant="outline"
-                            size="md"
-                        />
-                    </View>
-                </View>
-            </Modal>
-
             <Modal visible={paymentModalVisible} transparent animationType="slide" onRequestClose={closePayModal}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalCard, { padding: spacing.cardPadding }]}>
@@ -605,52 +457,44 @@ export default function SchoolInvoicesScreen() {
                         {paymentTarget ? (
                             <>
                                 <Text style={styles.summaryText}>Booking ID: {paymentTarget.booking_id}</Text>
-                                <Text style={styles.summaryText}>Total Amount: {formatCurrency(paymentTarget.total_amount)}</Text>
+                                <Text style={styles.summaryText}>
+                                    Total Amount: {formatCurrency(paymentTarget.total_amount)}
+                                </Text>
+
+                                <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Card Information</Text>
+                                <Text style={{ fontSize: 11, color: Colors.textMuted, marginBottom: 8 }}>
+                                    Secure payment powered by Stripe
+                                </Text>
+
+                                {Platform.OS === 'web' ? (
+                                    <View style={styles.webCardPlaceholder}>
+                                        <Ionicons name="card-outline" size={20} color={Colors.textMuted} />
+                                        <Text style={styles.webCardText}>
+                                            Card input only available on mobile app.{'\n'}
+                                            Use the mobile app to complete payment.
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <CardField
+                                        postalCodeEnabled={true}
+                                        placeholders={{ number: '4242 4242 4242 4242' }}
+                                        cardStyle={{
+                                            backgroundColor: Colors.surface,
+                                            textColor: Colors.text,
+                                            borderColor: Colors.border,
+                                            borderWidth: 1,
+                                            borderRadius: 10,
+                                        }}
+                                        style={{ width: '100%', height: 56, marginBottom: 14 }}
+                                        onCardChange={(details) => setCardDetails(details)}
+                                    />
+                                )}
 
                                 <View style={styles.bankInfoBox}>
-                                    <Text style={styles.bankTitle}>Destination Bank Details</Text>
-                                    <Text style={styles.bankText}>Bank: BCA</Text>
-                                    <Text style={styles.bankText}>Account Number: 1234567890</Text>
-                                    <Text style={styles.bankText}>Account Holder: John Doe</Text>
-                                    <Text style={styles.bankText}>Branch: Jakarta Sudirman</Text>
+                                    <Text style={styles.bankTitle}>Demo Card (Test Mode)</Text>
+                                    <Text style={styles.bankText}>Number: 4242 4242 4242 4242</Text>
+                                    <Text style={styles.bankText}>Expiry: 12/34  •  CVC: 123  •  ZIP: 12345</Text>
                                 </View>
-
-                                <Text style={styles.fieldLabel}>Payment Method</Text>
-                                <View style={styles.methodRow}>
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.methodBtn,
-                                            paymentMethod === 'credit_card' && styles.methodBtnActive,
-                                        ]}
-                                        onPress={() => setPaymentMethod('credit_card')}
-                                    >
-                                        <Text style={[styles.methodBtnText, paymentMethod === 'credit_card' && styles.methodBtnTextActive]}>Credit Card</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.methodBtn,
-                                            paymentMethod === 'bank_transfer' && styles.methodBtnActive,
-                                        ]}
-                                        onPress={() => setPaymentMethod('bank_transfer')}
-                                    >
-                                        <Text style={[styles.methodBtnText, paymentMethod === 'bank_transfer' && styles.methodBtnTextActive]}>Bank Transfer</Text>
-                                    </TouchableOpacity>
-                                </View>
-
-                                <Text style={styles.fieldLabel}>Payment Proof</Text>
-                                <View style={styles.proofBox}>
-                                    <Text style={styles.proofFileName}>{paymentProofFileName || '-'}</Text>
-                                    <TouchableOpacity
-                                        style={styles.pickFileBtn}
-                                        onPress={handlePickPaymentProof}
-                                    >
-                                        <Ionicons name="attach-outline" size={16} color={Colors.primary} />
-                                        <Text style={styles.pickFileText}>{paymentProofFileName ? 'Replace File' : 'Choose File'}</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                {paymentProofUri ? (
-                                    <Text style={styles.uploadMetaText}>Selected: {paymentProofUri}</Text>
-                                ) : null}
 
                                 <View style={styles.modalActionRow}>
                                     <AppButton
@@ -661,7 +505,7 @@ export default function SchoolInvoicesScreen() {
                                         style={styles.flexActionBtn}
                                     />
                                     <AppButton
-                                        title="Confirm Payment"
+                                        title={`Pay ${formatCurrency(paymentTarget.total_amount)}`}
                                         onPress={handleSubmitPayment}
                                         loading={submitting}
                                         size="md"
@@ -712,17 +556,6 @@ const styles = StyleSheet.create({
         height: 44,
     },
     searchInput: { flex: 1, fontSize: 14, color: Colors.text, paddingVertical: 0 },
-    resetDemoBtn: {
-        marginTop: 10,
-        alignSelf: 'flex-start',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: Colors.primary + '40',
-        backgroundColor: Colors.primaryBg,
-    },
-    resetDemoText: { fontSize: 12, fontWeight: '700' as const, color: Colors.primary },
     filterWrap: {
         zIndex: 2,
         elevation: 2,
@@ -853,11 +686,6 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
 
-    reviewHeader: {
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-
     sessionInfo: {
         fontSize: 12,
         color: Colors.textSecondary,
@@ -897,4 +725,21 @@ const styles = StyleSheet.create({
         textAlign: 'right',
         marginBottom: 10,
     },
+    webCardPlaceholder: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.background,
+},
+webCardText: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    flex: 1,
+    lineHeight: 18,
+},
 });

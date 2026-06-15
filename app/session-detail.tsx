@@ -16,6 +16,7 @@ import {
 	AppStatusBadge,
 	AppTopBar,
 	useResponsiveSpacing,
+	resolveSessionStatus,
 } from '@/components/ui/AppPrimitives';
 import { getDashboardData } from '@/lib/services/school';
 import { SessionStatus } from '@/types';
@@ -23,7 +24,9 @@ import {
 	acceptSession,
 	declineSession,
 	checkInSlot,
-	checkOutSlot
+	checkOutSlot,
+	unableAttendance,
+	confirmAttendance,
 } from '@/lib/services/teacher';
 
 export default function SessionDetailScreen() {
@@ -36,10 +39,7 @@ export default function SessionDetailScreen() {
 	const [sessions, setSessions] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 
-	const mappingStatus: Record<string, SessionStatus> = {
-		"0": "open",
-		"1": "closed"
-	};
+    
 
 	const fetchData = async () => {
 		if (user) {
@@ -65,9 +65,13 @@ export default function SessionDetailScreen() {
 			date: slot.schedule_date,
 			startTime: slot.start_time,
 			endTime: slot.end_time,
-			status: slot.attendance_status
+			status: slot.attendance_status,
+			is_confirm: slot.is_confirm,
+			check_in_time: slot.check_in_time,
 		}));
 	}, [session]);
+
+	const currentStatus: SessionStatus = session ? resolveSessionStatus(session.status, session.is_confirm) : 'open';
 
 	if (loading) {
 		return (
@@ -132,6 +136,7 @@ export default function SessionDetailScreen() {
 			}
 		}
 	}
+	// console.log(user.id);
 
 	return (
 		<View style={[styles.container, { paddingTop: topPad }]}>
@@ -158,7 +163,7 @@ export default function SessionDetailScreen() {
 						<View style={styles.subjectRow}>
 							<Text style={styles.subject}>{session.subject_name}</Text>
 						</View>
-						<AppStatusBadge status={mappingStatus[String(session.status)] ?? "open"} size="md" showDot />
+						<AppStatusBadge status={currentStatus} size="md" showDot />
 					</View>
 					<AppInfoRow icon="location-outline" label="Location" value={`${session.state}, ${session.locality}, ${session.pcode}`} labelWidth={70} />
 					<AppInfoRow icon="business-outline" label="School" value={session.school_name} labelWidth={70} />
@@ -187,25 +192,58 @@ export default function SessionDetailScreen() {
 								value={`${slot.startTime} - ${slot.endTime}`}
 							/>
 
-							{/* CHECK IN */}
-							{isTeacher &&
-								session.request_status === 'accepted' &&
+							{/* CONFIRM ATTENDANCE - hanya jika belum konfirmasi */}
+							{isTeacher && session.request_status === 'accepted' &&
 								String(session.teacher_user_id) === String(user?.id) &&
-								slot.status === null && (
+								slot.status === null &&
+								(slot.is_confirm === null || slot.is_confirm === undefined) && (
+								<>
 									<AppButton
-										title="Check In"
-										onPress={async () => {
-											const res = await checkInSlot(slot.id);
-											await fetchData();
-											if (res?.success === true) {
-												notify('Success', 'You have checked in successfully.');
-											} else {
-												notify('Error', res?.message || 'Check in failed.');
-											}
-										}}
+										title="Confirm Attendance"
+										variant="secondary"
 										style={{ marginTop: 6 }}
+										onPress={async () => {
+											const res = await confirmAttendance(slot.id);
+											await fetchData();
+											if (res?.success) notify('Success', 'Attendance confirmed.');
+											else notify('Error', res?.message || 'Failed to confirm attendance.');
+										}}
 									/>
-								)}
+									<AppButton
+										title="Unable to Attend"
+										variant="outline"
+										style={{ marginTop: 6 }}
+										onPress={async () => {
+											const res = await unableAttendance(slot.id);
+											await fetchData();
+											if (res?.success) notify('Info', 'Marked as unable to attend.');
+											else notify('Error', res?.message || 'Failed to update.');
+										}}
+									/>
+								</>
+							)}
+
+							{/* UNABLE TO ATTEND badge */}
+							{(slot.is_confirm === 2 || slot.is_confirm === '2') && (
+								<Text style={{ color: Colors.error, marginTop: 6 }}>✗ Unable to Attend</Text>
+							)}
+
+							{/* CHECK IN - hanya setelah konfirmasi */}
+							{isTeacher && session.request_status === 'accepted' &&
+								String(session.teacher_user_id) === String(user?.id) &&
+								slot.status === null &&
+								(slot.is_confirm === 1 || slot.is_confirm === '1') && (
+								<AppButton
+									title="Check In"
+									onPress={async () => {
+										const res = await checkInSlot(slot.id);
+										await fetchData();
+										if (res?.success === true) notify('Success', 'You have checked in successfully.');
+										else notify('Error', res?.message || 'Check in failed.');
+									}}
+									style={{ marginTop: 6 }}
+								/>
+							)}
 
 							{/* CHECK OUT */}
 							{isTeacher &&
