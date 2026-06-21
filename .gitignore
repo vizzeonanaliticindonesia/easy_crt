@@ -39,3 +39,11 @@ yarn-error.*
 app-example
 teacher_relief.sql
 workflow api.pdf
+
+# QA / test artifacts (tester-produced, not source of truth)
+TEST_PLAN.md
+BUG_SUMMARY.md
+/qa/
+coverage/
+.jest-cache/
+/maestro-output/
