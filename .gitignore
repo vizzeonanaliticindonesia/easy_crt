@@ -47,3 +47,6 @@ BUG_SUMMARY.md
 coverage/
 .jest-cache/
 /maestro-output/
+
+# Claude Code local tooling config (not used by the dev team)
+.claude/
