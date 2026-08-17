@@ -45,24 +45,25 @@ function mapSessionToConfirmationStatus(status: SessionStatus): string {
 
 function toSessionConfirmationBooking(session: TeachingSession): SessionConfirmationBooking {
   const mappedStatus = mapSessionToConfirmationStatus(session.status);
+  const primarySchedule = session.schedules?.[0];
 
   return {
     id: session.id,
-    teacher_name: session.teacherName || '-',
-    school_name: session.schoolName || '-',
-    schoolId: session.schoolId, // include schoolId in mapped booking for filtering
-    subject_name: session.subject || '-',
+    teacher_name: session.teacher_name || '-',
+    school_name: session.school_name || '-',
+    schoolId: session.school_id, // include schoolId in mapped booking for filtering
+    subject_name: session.subject_name || '-',
     booking_status: mappedStatus,
     schedules: [
       {
         id: session.id,
-        schedule_date: session.date,
-        start_time: session.startTime,
-        end_time: session.endTime,
+        schedule_date: primarySchedule?.schedule_date || '',
+        start_time: primarySchedule?.start_time || '',
+        end_time: primarySchedule?.end_time || '',
         attendance_status: mappedStatus,
-        attendance_notes: session.attendanceNotes,
-        attendance_check_in: session.attendanceCheckIn,
-        attendance_check_out: session.attendanceCheckOut,
+        attendance_notes: session.attendance_notes,
+        attendance_check_in: session.attendance_check_in,
+        attendance_check_out: session.attendance_check_out,
       },
     ],
   };
@@ -84,7 +85,7 @@ interface SessionContextType {
   handleReject: (scheduleId: string | number, notes: string) => Promise<boolean>;
   updateSessionStatus: (sessionId: string, status: SessionStatus, extra?: Partial<TeachingSession>) => Promise<void>;
   acceptSession: (sessionId: string, teacherId: string, teacherName: string) => Promise<void>;
-  addNotification: (notif: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => Promise<void>;
+  addNotification: (notif: Omit<AppNotification, 'id' | 'created_at' | 'is_read'>) => Promise<void>;
   markNotificationRead: (notifId: string) => Promise<void>;
   //GETTERS (query)
   getSessionsForUser: (userId: string, role: 'teacher' | 'school') => TeachingSession[];
@@ -108,25 +109,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   async function loadData() {
     try {
-      let savedSessions = await sessionConfirmationsRepository.getSessions();
+      const savedSessions = await sessionConfirmationsRepository.getSessions();
       const savedTeachers = await sessionRuntimeRepository.getTeachers();
       const savedNotifications = await sessionRuntimeRepository.getNotifications();
-
-      // Testing helper: keep Sarah's sessions in completed state so school can see confirm/reject actions.
-      const normalizedSessions = savedSessions.map((session) => {
-        const isSarahSession =
-          session.teacher_id === 'teacher_1' ||
-          (session.teacherName || '').trim().toLowerCase() === 'sarah johnson';
-
-        if (!isSarahSession || session.status === 'completed') return session;
-        return { ...session, status: 'completed' as SessionStatus };
-      });
-
-      const hasSessionStatusChange = normalizedSessions.some((session, index) => session.status !== savedSessions[index]?.status);
-      if (hasSessionStatusChange) {
-        savedSessions = normalizedSessions;
-        await sessionRuntimeRepository.saveSessions(savedSessions);
-      }
 
       setSessions(savedSessions); // simpan ke state agar bisa diakses di seluruh aplikasi
       setTeachers(savedTeachers);
@@ -144,11 +129,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   async function createSession(sessionData: Omit<TeachingSession, 'id' | 'createdAt' | 'status'>) {
     try {
-      const primarySchedule = sessionData.scheduleSlots?.[0] || {
-        date: sessionData.date,
-        startTime: sessionData.startTime,
-        endTime: sessionData.endTime,
-      };
+      const primarySchedule = sessionData.schedules?.[0];
 
       const newSession: TeachingSession = {
         ...sessionData,
@@ -167,7 +148,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           userId: teacherId,
           type: 'session_request',
           title: 'New Teaching Request',
-          message: `${sessionData.schoolName} needs a ${sessionData.subject} teacher on ${primarySchedule.date}.`,
+          message: `${sessionData.school_name} needs a ${sessionData.subject_name} teacher on ${primarySchedule?.schedule_date || ''}.`,
           sessionId: newSession.id,
         });
       }
@@ -181,22 +162,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const session = sessions.find((s) => s.id === targetId);
     if (!session) return false;
 
+    const primarySchedule = session.schedules?.[0];
     const confirmed = await sessionConfirmationsRepository.confirmSession({
       scheduleId,
-      attendanceNotes: session.attendanceNotes || 'Attendance confirmed by school.',
-      attendanceCheckIn: session.attendanceCheckIn || `${session.date} ${session.startTime}`,
-      attendanceCheckOut: session.attendanceCheckOut || `${session.date} ${session.endTime}`,
+      attendanceNotes: session.attendance_notes || 'Attendance confirmed by school.',
+      attendanceCheckIn: session.attendance_check_in || `${primarySchedule?.schedule_date || ''} ${primarySchedule?.start_time || ''}`,
+      attendanceCheckOut: session.attendance_check_out || `${primarySchedule?.schedule_date || ''} ${primarySchedule?.end_time || ''}`,
     });
     if (!confirmed) return false;
 
     setSessions((prev) => prev.map((s) => (s.id === targetId ? confirmed : s)));
 
-    if (session.teacherId) {
+    if (session.teacher_id) {
       await addNotification({
-        userId: session.teacherId,
+        userId: session.teacher_id,
         type: 'attendance_confirmed',
         title: 'Attendance Confirmed',
-        message: `${session.schoolName} confirmed your attendance for ${session.subject}.`,
+        message: `${session.school_name} confirmed your attendance for ${session.subject_name}.`,
         sessionId: session.id,
       });
     }
@@ -236,12 +218,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const session = sessions.find((s) => s.id === sessionId);
       if (!session) return;
 
-      if (session.teacherId && session.teacherId !== teacherId) {
+      if (session.teacher_id && session.teacher_id !== teacherId) {
         await addNotification({
           userId: teacherId,
           type: 'session_accepted',
           title: 'Session Already Taken',
-          message: `Another teacher has already accepted this session for ${session.subject}.`,
+          message: `Another teacher has already accepted this session for ${session.subject_name}.`,
           sessionId,
         });
         return;
@@ -249,17 +231,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       setSessions((prev) => {
         const updated = prev.map((s) =>
-          s.id === sessionId ? { ...s, status: 'accepted' as SessionStatus, teacherId, teacherName } : s
+          s.id === sessionId ? { ...s, status: 'accepted' as SessionStatus, teacher_id: teacherId, teacher_name: teacherName } : s
         );
         sessionRuntimeRepository.saveSessions(updated);
         return updated;
       });
 
       await addNotification({
-        userId: session.schoolId,
+        userId: session.school_id,
         type: 'session_accepted',
         title: 'Teacher Accepted',
-        message: `${teacherName} accepted your teaching session for ${session.subject}.`,
+        message: `${teacherName} accepted your teaching session for ${session.subject_name}.`,
         sessionId,
       });
     } catch (e) {
@@ -267,13 +249,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function addNotification(notifData: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) {
+  async function addNotification(notifData: Omit<AppNotification, 'id' | 'created_at' | 'is_read'>) {
     try {
       const newNotif: AppNotification = {
         ...notifData,
         id: 'notif_' + Date.now().toString() + Math.random().toString(36).substr(2, 5),
-        read: false,
-        createdAt: new Date().toISOString(),
+        is_read: '0',
+        created_at: new Date().toISOString(),
       };
       setNotifications((prev) => {
         const updated = [newNotif, ...prev];
@@ -289,7 +271,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       setNotifications((prev) => {
         const updated = prev.map((n) =>
-          n.id === notifId ? { ...n, read: true } : n
+          n.id === notifId ? { ...n, is_read: '1' as const } : n
         );
         sessionRuntimeRepository.saveNotifications(updated);
         return updated;
@@ -302,10 +284,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   function getSessionsForUser(userId: string, role: 'teacher' | 'school') {
     if (role === 'teacher') {
       return sessions.filter(
-        (s) => s.teacherId === userId || s.selectedTeacherIds.includes(userId)
+        (s) => s.teacher_id === userId || s.selectedTeacherIds.includes(userId)
       );
     }
-    return sessions.filter((s) => s.schoolId === userId);
+    return sessions.filter((s) => s.school_id === userId);
   }
 
   function getNotificationsForUser(userId: string) {
@@ -313,7 +295,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   function getUnreadCount(userId: string) {
-    return notifications.filter((n) => n.userId === userId && !n.read).length;
+    return notifications.filter((n) => n.userId === userId && n.is_read !== '1').length;
   }
 
   // current user is used to limit results for school users
@@ -323,7 +305,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const sessionConfirmations = useMemo(() => {
     const mapped = sessions.map(toSessionConfirmationBooking);
     if (!user) return mapped;
-    if (user.role === 'school') {
+    if (user.role === 10) {
       return mapped.filter((b) => b.schoolId === user.id); // only bookings belonging to this school
     }
     return mapped;

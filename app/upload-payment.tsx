@@ -60,18 +60,18 @@ export default function UploadPaymentScreen() {
 		setTimeout(async () => {
 			await updateSessionStatus(session.id, 'payment_confirmed');
 			await addNotification({
-				userId: session.schoolId,
+				userId: session.school_id,
 				type: 'payment_confirmed',
 				title: 'Payment Confirmed',
-				message: `Payment for ${session.subject} session has been confirmed by the provider.`,
+				message: `Payment for ${session.subject_name} session has been confirmed by the provider.`,
 				sessionId: session.id,
 			});
-			if (session.teacherId) {
+			if (session.teacher_id) {
 				await addNotification({
-					userId: session.teacherId,
+					userId: session.teacher_id,
 					type: 'payment_confirmed',
 					title: 'Payment Received',
-					message: `Payment for ${session.subject} session has been confirmed. The provider will redirect the payment to you.`,
+					message: `Payment for ${session.subject_name} session has been confirmed. The provider will redirect the payment to you.`,
 					sessionId: session.id,
 				});
 			}
@@ -108,7 +108,7 @@ export default function UploadPaymentScreen() {
 						<Text style={styles.invoiceLabel}>Invoice Amount</Text>
 						<Text style={styles.invoiceAmount}>${session.invoiceAmount}</Text>
 						<Text style={styles.invoiceSession}>
-							{session.subject} - {session.date}
+							{session.subject_name} - {session.schedules?.[0]?.schedule_date}
 						</Text>
 					</AppCard>
 				)}

@@ -9,6 +9,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '@/contexts/AuthContext';
 import { Colors } from '@/constants/Colors';
 import { notify } from '@/lib/dialogs';
+import { isValidEmail } from '@/lib/forms';
 import StepIndicator from '@/components/StepIndicator';
 import { UserDocument } from '@/types';
 import {
@@ -281,7 +282,7 @@ export default function RegisterTeacherScreen() {
 				notify('Error', 'Please complete all required fields in Profile & Account.');
 				return false;
 			}
-			if (!email.includes('@')) {
+			if (!isValidEmail(email)) {
 				notify('Error', 'Please enter a valid email.');
 				return false;
 			}

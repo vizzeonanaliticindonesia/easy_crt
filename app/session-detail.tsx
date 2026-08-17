@@ -6,7 +6,6 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSession } from '@/contexts/SessionContext';
 import { Colors } from '@/constants/Colors';
 import { confirmDialog, notify } from '@/lib/dialogs';
 import {
@@ -27,6 +26,7 @@ import {
 	checkOutSlot,
 	unableAttendance,
 	confirmAttendance,
+	getTeacherDashboardData,
 } from '@/lib/services/teacher';
 
 export default function SessionDetailScreen() {
@@ -38,14 +38,31 @@ export default function SessionDetailScreen() {
 	const spacing = useResponsiveSpacing();
 	const [sessions, setSessions] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [loadError, setLoadError] = useState(false);
+	const [actionBusy, setActionBusy] = useState(false);
 
-    
+	const mountedRef = React.useRef(true);
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => { mountedRef.current = false; };
+	}, []);
 
 	const fetchData = async () => {
-		if (user) {
-			const fetchedSessions = await getDashboardData();
+		if (!user) return;
+		setLoading(true);
+		setLoadError(false);
+		try {
+			const fetchedSessions = user.role === 9
+				? await getTeacherDashboardData()
+				: await getDashboardData();
+			if (!mountedRef.current) return;
 			setSessions(fetchedSessions.data);
-			setLoading(false);
+		} catch (e) {
+			if (!mountedRef.current) return;
+			console.error('Failed to load session data:', e);
+			setLoadError(true);
+		} finally {
+			if (mountedRef.current) setLoading(false);
 		}
 	};
 
@@ -54,7 +71,7 @@ export default function SessionDetailScreen() {
 	}, [user]);
 
 	const session = React.useMemo(
-		() => sessions.find((s) => s.request_id == id),
+		() => (id ? sessions.find((s) => String(s.request_id) === String(id)) : undefined),
 		[sessions, id]
 	);
 
@@ -71,12 +88,21 @@ export default function SessionDetailScreen() {
 		}));
 	}, [session]);
 
-	const currentStatus: SessionStatus = session ? resolveSessionStatus(session.status, session.is_confirm) : 'open';
+	const currentStatus: SessionStatus = session ? resolveSessionStatus(session.request_status) : 'open';
 
 	if (loading) {
 		return (
 			<View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
 				<Text style={{ color: Colors.textSecondary }}>Loading session details...</Text>
+			</View>
+		);
+	}
+
+	if (loadError) {
+		return (
+			<View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+				<Text style={styles.errorText}>Failed to load session details.</Text>
+				<AppButton title="Retry" onPress={fetchData} variant="outline" size="md" />
 			</View>
 		);
 	}
@@ -89,54 +115,56 @@ export default function SessionDetailScreen() {
 		);
 	}
 
-	const isTeacher = user?.role == 9;
-	const isSchool = user?.role == 10;
+	const isTeacher = user?.role === 9;
 
 	async function handleTeacherAction(action: string) {
-		if (!user || !session) return;
+		if (!user || !session || actionBusy) return;
+		setActionBusy(true);
 
-		switch (action) {
-			case 'accept': {
-				const shouldAccept = await confirmDialog({
-					title: 'Accept Session',
-					message: 'Do you want to accept this teaching request?',
-					confirmText: 'Accept',
-				});
+		try {
+			switch (action) {
+				case 'accept': {
+					const shouldAccept = await confirmDialog({
+						title: 'Accept Session',
+						message: 'Do you want to accept this teaching request?',
+						confirmText: 'Accept',
+					});
 
-				if (!shouldAccept) break;
+					if (!shouldAccept) break;
 
-				const res = await acceptSession(session.rn_id);
+					const res = await acceptSession(session.rn_id);
 
-				if (res.status !== 'success') {
-					notify('Error', res.message || 'Failed to accept session');
+					if (res.status !== 'success') {
+						notify('Error', res.message || 'Failed to accept session');
+						break;
+					}
+
+					notify('Success', 'You have accepted the session.');
+
+					await fetchData();
+
 					break;
 				}
+				case 'decline': {
+					const shouldDecline = await confirmDialog({
+						title: 'Decline Session',
+						message: 'Are you sure you want to decline?',
+						confirmText: 'Decline',
+						destructive: true,
+					});
+					if (!shouldDecline) break;
 
-				notify('Success', 'You have accepted the session.');
+					await declineSession(session.rn_id);
 
-				await fetchData();
-
-				break;
+					notify('Success', 'You have declined the session.');
+					router.replace('/sessions'); // the sessions list refetches on its own when it comes into focus
+					break;
+				}
 			}
-			case 'decline': {
-				const shouldDecline = await confirmDialog({
-					title: 'Decline Session',
-					message: 'Are you sure you want to decline?',
-					confirmText: 'Decline',
-					destructive: true,
-				});
-				if (!shouldDecline) break;
-
-				const res = await declineSession(session.rn_id);
-				console.log('decline res:', res);
-
-				await fetchData(); // ← refresh dulu
-				router.replace('/sessions');     // ← baru back
-				break;
-			}
+		} finally {
+			setActionBusy(false);
 		}
 	}
-	// console.log(user.id);
 
 	return (
 		<View style={[styles.container, { paddingTop: topPad }]}>
@@ -202,22 +230,38 @@ export default function SessionDetailScreen() {
 										title="Confirm Attendance"
 										variant="secondary"
 										style={{ marginTop: 6 }}
+										disabled={actionBusy}
+										loading={actionBusy}
 										onPress={async () => {
-											const res = await confirmAttendance(slot.id);
-											await fetchData();
-											if (res?.success) notify('Success', 'Attendance confirmed.');
-											else notify('Error', res?.message || 'Failed to confirm attendance.');
+											if (actionBusy) return;
+											setActionBusy(true);
+											try {
+												const res = await confirmAttendance(slot.id);
+												await fetchData();
+												if (res?.success) notify('Success', 'Attendance confirmed.');
+												else notify('Error', res?.message || 'Failed to confirm attendance.');
+											} finally {
+												setActionBusy(false);
+											}
 										}}
 									/>
 									<AppButton
 										title="Unable to Attend"
 										variant="outline"
 										style={{ marginTop: 6 }}
+										disabled={actionBusy}
+										loading={actionBusy}
 										onPress={async () => {
-											const res = await unableAttendance(slot.id);
-											await fetchData();
-											if (res?.success) notify('Info', 'Marked as unable to attend.');
-											else notify('Error', res?.message || 'Failed to update.');
+											if (actionBusy) return;
+											setActionBusy(true);
+											try {
+												const res = await unableAttendance(slot.id);
+												await fetchData();
+												if (res?.success) notify('Info', 'Marked as unable to attend.');
+												else notify('Error', res?.message || 'Failed to update.');
+											} finally {
+												setActionBusy(false);
+											}
 										}}
 									/>
 								</>
@@ -235,30 +279,47 @@ export default function SessionDetailScreen() {
 								(slot.is_confirm === 1 || slot.is_confirm === '1') && (
 								<AppButton
 									title="Check In"
+									disabled={actionBusy}
+									loading={actionBusy}
 									onPress={async () => {
-										const res = await checkInSlot(slot.id);
-										await fetchData();
-										if (res?.success === true) notify('Success', 'You have checked in successfully.');
-										else notify('Error', res?.message || 'Check in failed.');
+										if (actionBusy) return;
+										setActionBusy(true);
+										try {
+											const res = await checkInSlot(slot.id);
+											await fetchData();
+											if (res?.success === true) notify('Success', 'You have checked in successfully.');
+											else notify('Error', res?.message || 'Check in failed.');
+										} finally {
+											setActionBusy(false);
+										}
 									}}
 									style={{ marginTop: 6 }}
 								/>
 							)}
 
-							{/* CHECK OUT */}
+							{/* CHECK OUT - hanya jika sudah check-in */}
 							{isTeacher &&
 								session.request_status === 'accepted' &&
 								String(session.teacher_user_id) === String(user?.id) &&
-								(slot.status === '0' || slot.status === 0) && (
+								(slot.status === '0' || slot.status === 0) &&
+								slot.check_in_time != null && (
 									<AppButton
 										title="Check Out"
+										disabled={actionBusy}
+										loading={actionBusy}
 										onPress={async () => {
-											const res = await checkOutSlot(slot.id);
-											await fetchData();
-											if (res?.success === true) {
-												notify('Success', 'You have checked out successfully.');
-											} else {
-												notify('Error', res?.message || 'Check out failed.');
+											if (actionBusy) return;
+											setActionBusy(true);
+											try {
+												const res = await checkOutSlot(slot.id);
+												await fetchData();
+												if (res?.success === true) {
+													notify('Success', 'You have checked out successfully.');
+												} else {
+													notify('Error', res?.message || 'Check out failed.');
+												}
+											} finally {
+												setActionBusy(false);
 											}
 										}}
 										style={{ marginTop: 6 }}
@@ -298,11 +359,12 @@ export default function SessionDetailScreen() {
 					</AppCard>
 				)}
 
-				{isTeacher && session.request_status == 'pending' && String(session.notification_status) === '1' && (
+				{isTeacher && session.request_status === 'pending' && String(session.notification_status) === '1' && (
 					<View style={styles.actionRow}>
 						<TouchableOpacity
 							style={[styles.actionBtn, styles.declineBtn]}
 							onPress={() => handleTeacherAction('decline')}
+							disabled={actionBusy}
 						>
 							<Ionicons name="close" size={18} color={Colors.error} />
 							<Text style={[styles.actionBtnText, { color: Colors.error }]}>Decline</Text>
@@ -310,6 +372,7 @@ export default function SessionDetailScreen() {
 						<TouchableOpacity
 							style={[styles.actionBtn, styles.acceptBtn]}
 							onPress={() => handleTeacherAction('accept')}
+							disabled={actionBusy}
 						>
 							<Ionicons name="checkmark" size={18} color="#FFF" />
 							<Text style={[styles.actionBtnText, { color: '#FFF' }]}>Accept</Text>
@@ -353,5 +416,4 @@ const styles = StyleSheet.create({
 	declineBtn: { backgroundColor: Colors.errorBg, borderWidth: 1, borderColor: Colors.error + '30' },
 	acceptBtn: { backgroundColor: Colors.primary },
 	actionBtnText: { fontSize: 15, fontWeight: '700' as const },
-	actionBtnSingle: { marginTop: 8 },
 });

@@ -6,23 +6,20 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useSession } from '@/contexts/SessionContext';
 import { Colors } from '@/constants/Colors';
 import { notify } from '@/lib/dialogs';
 import { AppButton, AppCard, AppTopBar, useResponsiveSpacing } from '@/components/ui/AppPrimitives';
 import { insertReview } from '@/lib/services/school';
 
 export default function ReviewTeacherScreen() {
-	const { id } = useLocalSearchParams<{ id: string }>();
+	const { id, teacherName, subjectName } = useLocalSearchParams<{ id: string; teacherName?: string; subjectName?: string }>();
 	const router = useRouter();
-	const { sessions, updateSessionStatus, addNotification } = useSession();
 	const insets = useSafeAreaInsets();
 	const topPad = Platform.OS === 'web' ? 67 : insets.top;
 	const spacing = useResponsiveSpacing();
 	const starSize = spacing.titleSize <= 25 ? 34 : spacing.titleSize >= 30 ? 44 : 40;
 	const commentBoxHeight = spacing.titleSize <= 25 ? 110 : spacing.titleSize >= 30 ? 140 : 120;
 
-	const session = sessions.find((s) => s.id === id);
 	const [rating, setRating] = useState(0);
 	const [comment, setComment] = useState('');
 	const [loading, setLoading] = useState(false);
@@ -89,10 +86,10 @@ export default function ReviewTeacherScreen() {
 					keyboardShouldPersistTaps="handled"
 					showsVerticalScrollIndicator={false}
 				>
-					{session && (
+					{(teacherName || subjectName) && (
 						<AppCard variant="surface" padding={spacing.cardPadding} style={[styles.sessionInfo, { marginBottom: spacing.sectionGap * 2 }]}>
-							<Text style={styles.teacherName}>{session.teacherName}</Text>
-							<Text style={styles.sessionSubject}>{session.subject} - {session.date}</Text>
+							<Text style={styles.teacherName}>{teacherName || '-'}</Text>
+							<Text style={styles.sessionSubject}>{subjectName || '-'}</Text>
 						</AppCard>
 					)}
 

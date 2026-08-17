@@ -9,6 +9,7 @@ import { SchoolProfile } from '@/types';
 import { useIsFocused } from '@react-navigation/native';
 import { Colors } from '@/constants/Colors';
 import { confirmDialog, notify } from '@/lib/dialogs';
+import { isValidEmail } from '@/lib/forms';
 
 import {
 	AppButton,
@@ -118,7 +119,7 @@ export default function SchoolProfileScreen() {
 				setAddress(res.address_line1 || '');
 				setContactEmail(res.contact_email || '');
 				setContactPhone(res.contact_phone || '');
-				setProfileImage(res.photo != null ? res.photo : school?.profileImage);
+				setProfileImage(res.photo != null ? res.photo : (school?.profileImage || ''));
 				setVerificationLogs(user.verification_logs || []);
 				setVerifStatus(user.verification_status ?? 0);
 			}
@@ -167,7 +168,7 @@ export default function SchoolProfileScreen() {
 				setStateOptions(formatted)
 
 			} catch (err) {
-				console.log('ERROR STATES:', err)
+				console.error('Failed to load states:', err)
 			}
 		}
 
@@ -184,8 +185,6 @@ export default function SchoolProfileScreen() {
 
 			const res = typeof raw === 'string' ? JSON.parse(raw) : raw
 
-			console.log('SUBURB RES:', res)
-
 			// sesuaikan dengan API kamu nanti
 			const list = res.suburbs || []
 
@@ -200,7 +199,7 @@ export default function SchoolProfileScreen() {
 			setSuburbs(formatted)
 
 		} catch (err) {
-			console.log('ERROR SUBURB:', err)
+			console.error('Failed to load suburbs:', err)
 		}
 	}
 
@@ -253,7 +252,7 @@ export default function SchoolProfileScreen() {
 			return;
 		}
 
-		if (!contactEmail.includes('@')) {
+		if (!isValidEmail(contactEmail)) {
 			notify('Error', 'Please enter a valid email');
 			return;
 		}
@@ -289,6 +288,7 @@ export default function SchoolProfileScreen() {
 
 			notify('Success', 'Profile saved successfully');
 			setVerifStatus(0);
+			await updateUser({ verification_status: 0 });
 		} catch (e) {
 			const error = e as any;
 
@@ -304,11 +304,6 @@ export default function SchoolProfileScreen() {
 	}
 
 	async function handleLogout() {
-		if (verifStatus == 2) {
-			notify('Info', 'Please save your profile before logging out.');
-			return;
-		}
-
 		const shouldLogout = await confirmDialog({
 			title: 'Logout',
 			message: 'Are you sure you want to log out?',
@@ -347,11 +342,7 @@ export default function SchoolProfileScreen() {
 			const name = asset.fileName || `photo_${Date.now()}.jpg`;
 			const type = asset.mimeType || 'image/jpeg';
 
-			console.log('UPLOAD DATA:', { uri, name, type });
-
 			const res = await uploadProfilePhoto({ uri, name, type });
-
-			console.log('UPLOAD RES:', res);
 
 			if (res?.status === 'success') {
 				setProfileImage(res.photo); //  dari backend (URL full)
@@ -373,8 +364,6 @@ export default function SchoolProfileScreen() {
 			</View>
 		);
 	}
-
-	console.log('ver status: ', verifStatus);
 
 	return (
 		<View style={{ flex: 1 }}>

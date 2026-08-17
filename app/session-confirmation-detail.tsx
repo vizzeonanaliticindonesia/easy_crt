@@ -120,9 +120,15 @@ export default function SessionDetailScreen() {
             setReviewVisible(true);
             return;
         }
-        router.push({ pathname: '/review-teacher', params: { id: booking.id } });
+        router.push({
+            pathname: '/review-teacher',
+            params: {
+                id: booking.id,
+                teacherName: booking.teacher_name || '',
+                subjectName: booking.subject_name || '',
+            },
+        });
     }
-    console.log(booking);
 
     // function handleReview() {
     //     // kalau sudah ada review → tampilkan modal view review
@@ -211,7 +217,7 @@ export default function SessionDetailScreen() {
                         </View>
                     </View>
                     {/* Taruh setelah cardMeta School */}
-                    {booking.booking_status == '1' && ( // sesuaikan value status complete di project kamu
+                    {booking.booking_status === '1' && (
                         <AppButton
                             title={booking.review_id ? 'View Review' : 'Leave a Review'}
                             onPress={handleReview}

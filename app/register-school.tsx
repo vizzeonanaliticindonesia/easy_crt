@@ -18,6 +18,7 @@ import {
 	useResponsiveSpacing,
 } from '@/components/ui/AppPrimitives';
 import { getStates, getSuburbs, registerStep1 } from '@/lib/services/school';
+import { isValidEmail } from '@/lib/forms';
 
 const SCHOOL_TYPE_OPTIONS = [
 	{ value: 'Primary', label: 'Primary' },
@@ -84,7 +85,7 @@ export default function RegisterSchoolScreen() {
 			}));
 			setSuburbs(formatted);
 		} catch (err) {
-			console.log('ERROR SUBURB:', err);
+			console.error('Failed to load suburbs:', err);
 		}
 	}
 
@@ -119,7 +120,7 @@ export default function RegisterSchoolScreen() {
 			notify('Error', 'Please fill in all required fields.');
 			return false;
 		}
-		if (!email.includes('@')) {
+		if (!isValidEmail(email)) {
 			notify('Error', 'Please enter a valid email.');
 			return false;
 		}

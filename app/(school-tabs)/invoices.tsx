@@ -21,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { notify } from '@/lib/dialogs';
 import { useIsFocused } from '@react-navigation/native';
 import { InvoicePaymentMethod, InvoiceRecord, InvoiceStatus } from '@/types';
+import { formatCurrency } from '@/lib/format';
 import {
     AppButton,
     AppCard,
@@ -32,13 +33,9 @@ import {
 } from '@/components/ui/AppPrimitives';
 import { getInvoiceData, getPaymentLogs, insertInvoice } from '@/lib/services/school';
 
-type FilterStatus = 'all' | 'unpaid' | 'paid';
+type FilterStatus = 'all' | 'unpaid' | 'waiting_confirmation' | 'paid' | 'rejected';
 
-const STATUS_FILTERS: FilterStatus[] = ['all', 'unpaid', 'paid'];
-
-function formatCurrency(amount: number): string {
-    return `$${amount}`;
-}
+const STATUS_FILTERS: FilterStatus[] = ['all', 'unpaid', 'waiting_confirmation', 'paid', 'rejected'];
 
 function formatShortDateTime(value?: string): string {
     if (!value) return '-';
@@ -58,14 +55,14 @@ function toMethodLabel(method?: InvoicePaymentMethod): string {
     return method === 'credit_card' ? 'Credit Card' : 'Bank Transfer';
 }
 
-function getStatusLabel(filteredInvoice: InvoiceStatus): string {
+function getStatusLabel(filteredInvoice: string): string {
     if (filteredInvoice === '1') return 'Paid';
     if (filteredInvoice === '2') return 'Waiting Confirmation';
     if (filteredInvoice === '3') return 'Rejected';
     return 'Unpaid';
 }
 
-function getStatusTone(filteredInvoice: InvoiceStatus): 'pending' | 'complete' | 'declined' | 'neutral' {
+function getStatusTone(filteredInvoice: string): 'pending' | 'complete' | 'declined' | 'neutral' {
     if (filteredInvoice === '1') return 'complete';
     if (filteredInvoice === '2') return 'pending';
     if (filteredInvoice === '3') return 'declined';
@@ -75,7 +72,9 @@ function getStatusTone(filteredInvoice: InvoiceStatus): 'pending' | 'complete' |
 function getFilterLabel(status: FilterStatus): string {
     if (status === 'all') return 'All';
     if (status === 'unpaid') return 'Unpaid';
+    if (status === 'waiting_confirmation') return 'Waiting';
     if (status === 'paid') return 'Paid';
+    if (status === 'rejected') return 'Rejected';
     return 'All';
 }
 
@@ -101,7 +100,7 @@ export default function SchoolInvoicesScreen() {
     const [activeLogs, setActiveLogs] = useState<any[]>([]);
 
     const [paymentModalVisible, setPaymentModalVisible] = useState(false);
-    const [paymentTarget, setPaymentTarget] = useState<InvoiceRecord | null>(null);
+    const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
     const { createPaymentMethod } = useStripe();
     const [cardDetails, setCardDetails] = useState<CardFieldInput.Details | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -180,7 +179,7 @@ export default function SchoolInvoicesScreen() {
         setLogsVisible(true); 
     }
 
-    function openPayModal(item: InvoiceRecord) {
+    function openPayModal(item: any) {
         setPaymentTarget(item);
         setCardDetails(null);
         setPaymentModalVisible(true);
@@ -213,9 +212,6 @@ export default function SchoolInvoicesScreen() {
                 return;
             }
 
-            console.log('PAYMENT TARGET:', paymentTarget.id);
-            console.log('PAYMENT METHOD:', paymentMethod.id);
-            console.log('CALLING INSERT INVOICE');
             await insertInvoice(paymentTarget.id, paymentMethod.id);
 
             setPaymentModalVisible(false);
@@ -223,12 +219,6 @@ export default function SchoolInvoicesScreen() {
             await refreshData();
 
         } catch (err: any) {
-
-            console.log(
-                'PAYMENT ERROR:',
-                JSON.stringify(err?.response?.data, null, 2)
-            );
-
             notify(
                 'Error',
                 err?.response?.data?.message ||
@@ -322,7 +312,7 @@ export default function SchoolInvoicesScreen() {
 
             <FlatList
                 data={filteredData}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => String(item.id)}
                 contentContainerStyle={{
                     paddingHorizontal: spacing.horizontal,
                     paddingTop: spacing.sectionGap,

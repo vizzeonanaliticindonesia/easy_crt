@@ -55,24 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	async function login(email: string, password: string): Promise<{ success: boolean; message: string; status?: string; email?: string; reset_hash?: string }> {
 		// Try remote API login first
 		try {
-			const res = await fetch('https://teacher-relief.kreatifa.com/api/auth/login', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ login: email, password }),
-			});
+			const data = await api.post<any>('/auth/login', { login: email, password });
 
-			const data = await res.json().catch(() => null);
-			if (res.status === 403 && data?.status === 'force_reset') {
-				console.log('Password reset required for', email);
-				return {
-					success: false,
-					status: 'force_reset',
-					message: data?.message,
-					email: data?.email,
-					reset_hash: data?.reset_hash,
-				};
-			}
-			if (res.ok && data && data.status === 'success') {
+			if (data && data.status === 'success') {
 				// attach token to user object and persist
 				const remoteUser = data.user || { email };
 				const token = data.token;
@@ -123,15 +108,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 				setUser(userWithToken);
 				await storage.saveUser(userWithToken);
-				console.log('LOGIN TOKEN:', data.token, 'normalizedRole=', (userWithToken as any).role, 'role_id=', (userWithToken as any).role_id);
 				setAuthToken(token);
 				return { success: true, message: data.message || 'Login successful' };
 			}
-			// If API responded with error, fall back to local/mock checks below
 			return { success: false, message: 'Invalid email or password' };
-		} catch (err) {
-			// network error — continue to offline/mock fallback
-			console.warn('API login failed, falling back to local auth', err);
+		} catch (err: any) {
+			if (err?.status === 403 && err?.data?.status === 'force_reset') {
+				return {
+					success: false,
+					status: 'force_reset',
+					message: err.data?.message,
+					email: err.data?.email,
+					reset_hash: err.data?.reset_hash,
+				};
+			}
+			console.warn('API login failed', err);
 			return { success: false, message: 'Login failed. Please try again.' };
 		}
 	}
@@ -161,7 +152,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				newUser = {
 					id,
 					email: userData.email || '',
-					password: userData.password || '',
 					name: userData.name || teacherName,
 					teacherName,
 					role: 9,
@@ -190,7 +180,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				newUser = {
 					id,
 					email: userData.email || '',
-					password: userData.password || '',
 					name: userData.name || schoolName,
 					teacherName: userData.teacherName || schoolName,
 					role: 10,
@@ -217,22 +206,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}
 
 	async function logout() {
-		// Try server-side revoke if token exists
 		try {
-			const saved = await storage.getUser();
-			const token = (saved as any)?.token;
-			if (token) {
-				try {
-					await fetch('https://teacher-relief.kreatifa.com/api/auth/logout', {
-						method: 'POST',
-						headers: { Authorization: `Bearer ${token}` },
-					});
-				} catch (e) {
-					// ignore network logout errors
-				}
-			}
+			await api.post('/auth/logout');
 		} catch (e) {
-			console.warn('Could not read saved user for logout', e);
+			// ignore network logout errors — token might already be invalid/expired
 		}
 
 		setAuthToken(null);
@@ -244,16 +221,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			console.error('Failed to clear user session:', e);
 		}
 	}
-
-	// async function logout() {
-	// 	try {
-	// 		await storage.removeUser()   // hapus user dari local
-	// 		api.setAuthToken(null)       // hapus token
-	// 		setUser(null)                // reset state
-	// 	} catch (e) {
-	// 		console.log('Logout error:', e)
-	// 	}
-	// }
 
 	async function updateUser(updates: Partial<User>) {
 		if (!user) return;
@@ -277,20 +244,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	async function reset_password(params: { email: string, reset_hash: string, password: string }): Promise<{ success: boolean; message: string }> {
 		try {
-			const res = await fetch('https://teacher-relief.kreatifa.com/api/auth/reset_password', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(params),
-			});
-			const data = await res.json().catch(() => null);
-
-			if (res.ok && data && data.status === 'success') {
+			const data = await api.post<any>('/auth/reset_password', params);
+			if (data && data.status === 'success') {
 				return { success: true, message: data.message || 'Password reset successful' };
 			}
 			return { success: false, message: data?.message || 'Password reset failed' };
-		} catch (err) {
+		} catch (err: any) {
 			console.warn('API password reset failed', err);
-			return { success: false, message: 'Password reset failed. Please try again.' };
+			return { success: false, message: err?.message || 'Password reset failed. Please try again.' };
 		}
 	}
 

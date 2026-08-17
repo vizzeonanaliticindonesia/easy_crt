@@ -46,16 +46,16 @@ function formatElapsed(createdAt: string): string {
 }
 
 // ── HOOK: realtime elapsed ────────────────────────────────
-function useElapsedTime(createdAt: string): string {
+function useElapsedTime(createdAt: string, active: boolean): string {
     const [elapsed, setElapsed] = useState(() => formatElapsed(createdAt));
 
     useEffect(() => {
-        if (!createdAt) return;
+        if (!createdAt || !active) return;
         const interval = setInterval(() => {
             setElapsed(formatElapsed(createdAt));
         }, 1000);
         return () => clearInterval(interval);
-    }, [createdAt]);
+    }, [createdAt, active]);
 
     return elapsed;
 }
@@ -69,12 +69,12 @@ export default function SessionCard({ session, onPress, userRole }: SessionCardP
         ? formatScheduleDate(firstScheduleDate)
         : '—';
 
-    // Realtime waiting time dari createdAt
-    const elapsed = useElapsedTime(session.createdAt);
-
-    const currentStatus: SessionStatus = resolveSessionStatus(session.status, session.is_confirm);
+    const currentStatus: SessionStatus = resolveSessionStatus(session.status);
 
     const isOpen = currentStatus === 'open';
+
+    // Realtime waiting time dari createdAt — only ticks while the card is actually showing it
+    const elapsed = useElapsedTime(session.createdAt, isOpen);
 
     return (
         <TouchableOpacity
@@ -106,7 +106,7 @@ export default function SessionCard({ session, onPress, userRole }: SessionCardP
                     <View style={styles.detailRow}>
                         <Ionicons name="location-outline" size={16} color={Colors.textSecondary} />
                         <Text style={styles.detailText} numberOfLines={1}>
-                            {session.state}, {session.locality}, {session.pcode}
+                            {[session.state, session.locality, session.pcode].filter(Boolean).join(', ') || '—'}
                         </Text>
                     </View>
 
@@ -114,7 +114,7 @@ export default function SessionCard({ session, onPress, userRole }: SessionCardP
                     {userRole === 'teacher' && (
                         <View style={styles.detailRow}>
                             <Ionicons name="business-outline" size={16} color={Colors.textSecondary} />
-                            <Text style={styles.detailText}>{session.school_name}</Text>
+                            <Text style={styles.detailText}>{session.school_name || '—'}</Text>
                         </View>
                     )}
 
@@ -123,7 +123,7 @@ export default function SessionCard({ session, onPress, userRole }: SessionCardP
                         <View style={styles.detailRow}>
                             <Ionicons name="person-outline" size={16} color={Colors.textSecondary} />
                             <Text style={styles.detailText}>
-                                {session.teacher_first_name} {session.teacher_last_name}
+                                {[session.teacher_first_name, session.teacher_last_name].filter(Boolean).join(' ') || '—'}
                             </Text>
                         </View>
                     )}
@@ -197,23 +197,5 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600' as const,
         color: '#F59E0B',
-    },
-    amountRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 14,
-        paddingTop: 14,
-        borderTopWidth: 1,
-        borderTopColor: Colors.borderLight,
-    },
-    amountLabel: {
-        fontSize: 13,
-        color: Colors.textSecondary,
-    },
-    amount: {
-        fontSize: 16,
-        fontWeight: '700' as const,
-        color: Colors.primary,
     },
 });

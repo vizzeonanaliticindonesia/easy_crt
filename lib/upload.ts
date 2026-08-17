@@ -1,5 +1,3 @@
-import { fetchResource } from '@/lib/api';
-
 export const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 export const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 export const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
@@ -49,7 +47,9 @@ export function validateUploadFile(
 }
 
 export async function createUploadBlob(uri: string, mimeType: string) {
-    const response = await fetchResource(uri);
+    // Local file/content URI, not an API resource — fetch directly, not through the api wrapper
+    // (which would prepend BASE_URL and is meant for authenticated REST calls).
+    const response = await fetch(uri);
     const arrayBuffer = await response.arrayBuffer();
     return new Blob([arrayBuffer], { type: mimeType || 'application/octet-stream' });
 }

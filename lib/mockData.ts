@@ -6,7 +6,6 @@ export const MOCK_TEACHERS: TeacherProfile[] = [
     role: 'teacher',
 
     email: 'sarah.johnson@email.com',
-    password: 'password123',
 
     firstName: 'Sarah',
     lastName: 'Johnson',
@@ -39,7 +38,6 @@ export const MOCK_TEACHERS: TeacherProfile[] = [
     role: 'teacher',
 
     email: 'michael.chen@email.com',
-    password: 'password123',
 
     firstName: 'Michael',
     lastName: 'Chen',
@@ -72,7 +70,6 @@ export const MOCK_TEACHERS: TeacherProfile[] = [
     role: 'teacher',
 
     email: 'emma.wilson@email.com',
-    password: 'password123',
 
     firstName: 'Emma',
     lastName: 'Wilson',
@@ -105,7 +102,6 @@ export const MOCK_TEACHERS: TeacherProfile[] = [
     role: 'teacher',
 
     email: 'david.park@email.com',
-    password: 'password123',
 
     firstName: 'David',
     lastName: 'Park',
@@ -138,7 +134,6 @@ export const MOCK_TEACHERS: TeacherProfile[] = [
     role: 'teacher',
 
     email: 'lisa.martinez@email.com',
-    password: 'password123',
 
     firstName: 'Lisa',
     lastName: 'Martinez',
@@ -171,7 +166,6 @@ export const MOCK_SCHOOLS: SchoolProfile[] = [
 	{
 		id: 'school_1',
 		email: 'admin@lincoln-elementary.edu',
-		password: 'password123',
 		role: 'school',
 		phone: '+1-555-0201',
 		schoolName: 'Lincoln Elementary',
@@ -193,15 +187,18 @@ export const MOCK_SCHOOLS: SchoolProfile[] = [
 export const MOCK_SESSIONS: TeachingSession[] = [
 	{
 		id: 'session_1',
-		schoolId: 'school_1',
-		schoolName: 'Lincoln Elementary',
-		teacherId: 'teacher_1',
-		teacherName: 'Sarah Johnson',
-		subject: 'Mathematics',
-		date: '2024-12-20',
-		startTime: '09:00',
-		endTime: '12:00',
-		location: '123 School St, Downtown',
+		school_id: 'school_1',
+		school_name: 'Lincoln Elementary',
+		teacher_id: 'teacher_1',
+		teacher_name: 'Sarah Johnson',
+		subject_name: 'Mathematics',
+		request_date: '2024-12-18',
+		schedules: [
+			{ schedule_date: '2024-12-20', start_time: '09:00', end_time: '12:00' },
+		],
+		state: 'NSW',
+		locality: 'Downtown',
+		pcode: '2000',
 		status: 'completed',
 		selectedTeacherIds: ['teacher_1', 'teacher_3'],
 		invoiceAmount: 150,
@@ -209,13 +206,17 @@ export const MOCK_SESSIONS: TeachingSession[] = [
 	},
 	{
 		id: 'session_2',
-		schoolId: 'school_1',
-		schoolName: 'Lincoln Elementary',
-		subject: 'English',
-		date: '2024-12-22',
-		startTime: '13:00',
-		endTime: '16:00',
-		location: '123 School St, Downtown',
+		school_id: 'school_1',
+		school_name: 'Lincoln Elementary',
+		teacher_id: '',
+		subject_name: 'English',
+		request_date: '2024-12-19',
+		schedules: [
+			{ schedule_date: '2024-12-22', start_time: '13:00', end_time: '16:00' },
+		],
+		state: 'NSW',
+		locality: 'Downtown',
+		pcode: '2000',
 		status: 'completed',
 		selectedTeacherIds: ['teacher_2', 'teacher_5'],
 		createdAt: '2024-12-19T08:00:00Z',
@@ -288,8 +289,8 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
 		title: 'New Teaching Request',
 		message: 'Lincoln Elementary needs a Mathematics teacher on Dec 20.',
 		sessionId: 'session_1',
-		read: false,
-		createdAt: '2024-12-18T08:00:00Z',
+		is_read: '0',
+		created_at: '2024-12-18T08:00:00Z',
 	},
 	{
 		id: 'notif_2',
@@ -298,8 +299,8 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
 		title: 'Teacher Accepted',
 		message: 'Sarah Johnson accepted your teaching session request.',
 		sessionId: 'session_1',
-		read: false,
-		createdAt: '2024-12-18T09:00:00Z',
+		is_read: '0',
+		created_at: '2024-12-18T09:00:00Z',
 	},
 ];
 

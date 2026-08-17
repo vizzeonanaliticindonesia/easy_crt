@@ -38,14 +38,15 @@ class MockSessionConfirmationsRepository implements SessionConfirmationsReposito
 
         const updated = sessions.map((session) => {
             if (session.id !== targetId) return session;
-            updatedTarget = {
+            const next: TeachingSession = {
                 ...session,
                 status: 'attendance_confirmed',
-                attendanceNotes: params.attendanceNotes,
-                attendanceCheckIn: params.attendanceCheckIn,
-                attendanceCheckOut: params.attendanceCheckOut,
+                attendance_notes: params.attendanceNotes,
+                attendance_check_in: params.attendanceCheckIn,
+                attendance_check_out: params.attendanceCheckOut,
             };
-            return updatedTarget;
+            updatedTarget = next;
+            return next;
         });
 
         if (!updatedTarget) return null;
@@ -63,12 +64,13 @@ class MockSessionConfirmationsRepository implements SessionConfirmationsReposito
 
         const updated = sessions.map((session) => {
             if (session.id !== targetId) return session;
-            updatedTarget = {
+            const next: TeachingSession = {
                 ...session,
                 status: 'declined',
-                attendanceNotes: params.notes,
+                attendance_notes: params.notes,
             };
-            return updatedTarget;
+            updatedTarget = next;
+            return next;
         });
 
         if (!updatedTarget) return null;

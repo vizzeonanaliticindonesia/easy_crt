@@ -191,6 +191,7 @@ export default function CreateSessionScreen() {
 	const [step, setStep] = useState(0);
 	const isPrivateRequest = requestType === 'Private';
 	const teacherLookupSeq = React.useRef(0);
+	const teachersLookupSeq = React.useRef(0);
 
 	const [deletedRequestIds, setDeletedRequestIds] = useState<number[]>([]);
 
@@ -210,13 +211,16 @@ export default function CreateSessionScreen() {
 
 	const loadTeachers = React.useCallback(async () => {
 		if (!requestIds || requestIds.length === 0) return;
+		const lookupSeq = ++teachersLookupSeq.current;
 		try {
 			const res = await getTeachers(requestIds);
+			if (lookupSeq !== teachersLookupSeq.current) return; // a newer call already resolved
 			const list = res?.teachers ?? res?.data ?? [];
 			const nextTeachers = Array.isArray(list) ? list : [];
 			setTeachers(nextTeachers);
 			setSelectedTeacherIds(nextTeachers.map((teacher: any) => String(teacher.id)));
 		} catch (e) {
+			if (lookupSeq !== teachersLookupSeq.current) return;
 			console.error('Failed to fetch teachers:', e);
 		}
 	}, [requestIds]);
@@ -338,6 +342,10 @@ export default function CreateSessionScreen() {
 			(slot) => !slot.date || !slot.startTime || !slot.endTime
 		);
 
+		const hasInvalidTimeRange = normalizedSlots.some(
+			(slot) => slot.startTime && slot.endTime && slot.startTime >= slot.endTime
+		);
+
 		if (
 			!requestDate.trim() ||
 			!schoolName.trim()  ||
@@ -347,6 +355,11 @@ export default function CreateSessionScreen() {
 			hasIncompleteSlot
 		) {
 			notify('Error', 'Please fill in all session details and complete each schedule slot.');
+			return;
+		}
+
+		if (hasInvalidTimeRange) {
+			notify('Error', 'Each schedule slot\'s start time must be before its end time.');
 			return;
 		}
 
@@ -372,13 +385,12 @@ export default function CreateSessionScreen() {
 
 		setSavingStep1(true);
 		try {
-			const activeRequestIds = normalizedSlots.map((s) => s.requestId).filter(Boolean) as number[];
-
 			const payload = {
-				// request_ids: array of existing ids, aligned dengan schedules[]
-				// Kosong berarti semua slot di-INSERT
-				// request_ids: normalizedSlots.map((s) => s.requestId).filter(Boolean),
-				request_ids: [...activeRequestIds, ...deletedRequestIds],
+				// request_ids[i] must align 1:1 with schedules[i] (null = new slot to insert).
+				// Deletions are sent separately so they don't break that alignment.
+				// NOTE: 'deleted_request_ids' field name is unverified — confirm against the actual backend contract.
+				request_ids: normalizedSlots.map((s) => s.requestId ?? null),
+				deleted_request_ids: deletedRequestIds,
 
 				request_date:         requestDate.trim() || normalizedSlots[0]?.date || null,
 				teacher_id:           teacher_id.trim() || null,
@@ -389,6 +401,7 @@ export default function CreateSessionScreen() {
 				accreditation_level:  isPrivateRequest ? null : accreditationLevel.trim() || null,
 				qualification_level:  isPrivateRequest ? null : qualificationLevel.trim() || null,
 				distance:             isPrivateRequest ? null : (distance.trim() ? Number(distance.trim()) : null),
+				require_wwcc:         requireWwcc.trim() || null,
 				notes:                notes.trim() || null,
 
 				// schedules[] harus aligned index-per-index dengan request_ids[]
@@ -470,7 +483,7 @@ export default function CreateSessionScreen() {
 		if (!school) return;
 
 		const teacherIds = isPrivateRequest
-			? [String(teacherInfo?.id || teacher_id.trim())]
+			? (teacherInfo?.id ? [String(teacherInfo.id)] : [])
 			: selectedTeacherIds;
 
 		if (teacherIds.length === 0 || !teacherIds[0]) {

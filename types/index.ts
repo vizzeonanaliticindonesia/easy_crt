@@ -1,9 +1,14 @@
 export type UserRole = 9 | 10; // 9 = teacher, 10 = school
 
+export interface VerificationLog {
+  id: string;
+  created_at: string;
+  verification_notes?: string;
+}
+
 export interface User {
   id: string;
   email: string;
-  password: string;
   name?: string;
   teacherName: string;
   role: UserRole;
@@ -13,6 +18,9 @@ export interface User {
   documents?: UserDocument[];
   termsAccepted: boolean;
   integrityAccepted: boolean;
+  active?: boolean;
+  verification_status?: number;
+  verification_logs?: VerificationLog[];
   createdAt: string;
 }
 
@@ -60,13 +68,16 @@ export type SessionStatus =
   | 'reviewed'
   | 'open'
   | 'closed'
-  | 'declined';
+  | 'declined'
+  | 'attended'
+  | 'unattended';
 
 export interface TeachingSession {
   id: string;
   school_id: string;
   school_name: string;
   teacher_id: string;
+  teacher_name?: string;
   teacher_first_name?: string;
   teacher_last_name?: string;
   subject_name: string;
@@ -81,6 +92,9 @@ export interface TeachingSession {
   selectedTeacherIds: string[];
   invoiceAmount?: number;
   paymentProofUri?: string;
+  attendance_notes?: string;
+  attendance_check_in?: string;
+  attendance_check_out?: string;
   review?: Review;
   createdAt: string;
 }
@@ -119,3 +133,63 @@ export type NotificationType =
   | 'payment_uploaded'
   | 'payment_confirmed'
   | 'review_received';
+
+export type InvoiceStatus = 'unpaid' | 'waiting_confirmation' | 'paid';
+
+export type InvoicePaymentMethod = 'bank_transfer' | 'credit_card';
+
+export interface InvoiceReasonLog {
+  id: string;
+  changedAt: string;
+  notes: string;
+}
+
+export interface InvoiceRecord {
+  id: string;
+  bookingId: string;
+  schoolId: string;
+  sessionId?: string;
+  teacherName?: string;
+  subjectName?: string;
+  totalAmount: number;
+  status: InvoiceStatus;
+  paymentMethod?: InvoicePaymentMethod;
+  paidAt?: string;
+  fileInvoice: string;
+  paymentProofFileName?: string;
+  reasonLogs: InvoiceReasonLog[];
+}
+
+export interface SchoolDocument {
+  id: string;
+  fileName: string;
+  documentName: string;
+  documentNumber: string;
+  issuedBy: string;
+  issueDate: string;
+  expiryDate: string;
+  fileUri: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+
+export interface TeacherDocument {
+  id: string;
+  fileName: string;
+  documentName: string;
+  documentNumber: string;
+  issuedBy: string;
+  issueDate: string;
+  expiryDate: string;
+  fileUri: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+
+export interface SubjectItem {
+  id: string;
+  teacherName: string;
+  subject: string;
+}

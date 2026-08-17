@@ -1,7 +1,6 @@
-import { getToken as getStorageToken } from './storage';
 // const BASE_URL = 'http://teacher_relief.test:80/api';
 // const BASE_URL = 'http://teacher_relief.test/api'; //cek ipconfig untuk dapatkan IP komputer
-const BASE_URL = 'https://teacher-relief.vizzeon.com/api'; //cek ipconfig untuk dapatkan IP komputer
+export const BASE_URL = 'https://teacher-relief.kreatifa.com/api'; //cek ipconfig untuk dapatkan IP komputer
 
 let authToken: string | null = null;
 
@@ -30,8 +29,6 @@ async function request<T = any>(
   // throw new Error('TRACE ' + path);
   try {
     const token = authToken;
-console.log('AUTH TOKEN:', authToken);
-console.log('STORAGE TOKEN:', await getStorageToken());
 
     const headers: Record<string, string> = {
       Accept: 'application/json',

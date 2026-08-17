@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { TeacherProfile } from '@/types';
 import { Colors } from '@/constants/Colors';
 import { confirmDialog, notify } from '@/lib/dialogs';
+import { isValidEmail } from '@/lib/forms';
 import {
 	AppButton,
 	AppCard,
@@ -135,7 +136,7 @@ export default function TeacherProfileScreen() {
 			setPostcode(res.postcode || '');
 			setPassword('');
 			setRepeatPassword('');
-			setProfileImage(res.photo != null ? res.photo : teacher?.profileImage);
+			setProfileImage(res.photo != null ? res.photo : (teacher?.profileImage || ''));
 			setLoadingRating(Number(res.rating) || 0);
 			setVerificationLogs(user.verification_logs || []);
 			setVerifStatus(user.verification_status ?? 0);
@@ -183,7 +184,7 @@ export default function TeacherProfileScreen() {
 				setStateOptions(formatted)
 
 			} catch (err) {
-				console.log('ERROR STATES:', err)
+				console.error('Failed to load states:', err)
 			}
 		}
 
@@ -200,8 +201,6 @@ export default function TeacherProfileScreen() {
 
 			const res = typeof raw === 'string' ? JSON.parse(raw) : raw
 
-			console.log('SUBURB RES:', res)
-
 			// sesuaikan dengan API kamu nanti
 			const list = res.suburbs || []
 
@@ -216,7 +215,7 @@ export default function TeacherProfileScreen() {
 			setSuburbs(formatted)
 
 		} catch (err) {
-			console.log('ERROR SUBURB:', err)
+			console.error('Failed to load suburbs:', err)
 		}
 	}
 
@@ -271,7 +270,7 @@ export default function TeacherProfileScreen() {
 			return;
 		}
 
-		if (!email.includes('@')) {
+		if (!isValidEmail(email)) {
 			notify('Error', 'Please enter a valid email');
 			return;
 		}
@@ -310,6 +309,7 @@ export default function TeacherProfileScreen() {
 
 			notify('Success', 'Profile saved successfully');
 			setVerifStatus(0);
+			await updateUser({ verification_status: 0 });
 		} catch (e) {
 			const error = e as any;
 
@@ -323,15 +323,9 @@ export default function TeacherProfileScreen() {
 			setIsSaving(false);
 		}
 	}
-	console.log('verifStatus: ', verifStatus);
 
 	// logout akun
 	async function handleLogout() {
-		if (verifStatus == 2) {
-			notify('Info', 'Please save your profile before logging out.');
-			return;
-		}
-
 		const shouldLogout = await confirmDialog({
 			title: 'Logout',
 			message: 'Are you sure you want to log out?',
@@ -371,11 +365,7 @@ export default function TeacherProfileScreen() {
 			const name = asset.fileName || `photo_${Date.now()}.jpg`;
 			const type = asset.mimeType || 'image/jpeg';
 
-			console.log('UPLOAD DATA:', { uri, name, type });
-
 			const res = await uploadProfilePhoto({ uri, name, type });
-
-			console.log('UPLOAD RES:', res);
 
 			if (res?.status === 'success') {
 				setProfileImage(res.photo); //  dari backend (URL full)

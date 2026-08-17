@@ -8,23 +8,23 @@ import { SessionProvider } from '@/contexts/SessionContext';
 import { Colors } from '@/constants/Colors';
 import AppDialogProvider from '@/components/ui/AppDialogProvider';
 import { StripeProvider } from '@/lib/stripe-mock';
+import { notify } from '@/lib/dialogs';
 
 
 function RootNavigation() {
-	const { user, isLoading } = useAuth();
+	const { user, isLoading, logout } = useAuth();
 	const router = useRouter();
 	const segments = useSegments();
 	const pathname = usePathname();
 
 	useEffect(() => {
 		if (isLoading) return;
-		if (pathname.includes('reset-password')) {
-			console.log('[RootNavigation] skip reset-password');
-			return;
-		}
-		console.log('[RootNavigation] run route check', { user, isLoading, segments });
 
 		const firstSegment = segments[0] as string;
+		if (firstSegment === 'reset-password') {
+			return;
+		}
+
 		const publicRoutes = ['index', 'login', 'register-select', 'register-teacher', 'register-school', '+not-found'];
 		const isPublicRoute = !firstSegment || publicRoutes.includes(firstSegment);
 		const inTeacherTabs = firstSegment === '(teacher-tabs)';
@@ -33,15 +33,10 @@ function RootNavigation() {
 
 		if (!user) {
 			if (!isPublicRoute) {
-				if (pathname.includes('reset-password')) {
-					return;
-				}
-				console.log('[RootNavigation] no user - redirect to /login (from)', firstSegment);
 				router.replace('/login');
 			}
 		} else if (!user.termsAccepted) {
 			if (!inTerms) {
-				console.log('[RootNavigation] user not accepted terms - redirect to /terms');
 				router.replace('/terms');
 			}
 		} else {
@@ -49,10 +44,9 @@ function RootNavigation() {
 			const role = user.role;
 			const isTeacherRole = role === 9 ;
 			const isSchoolRole = role === 10 ;
-			const verificationStatus = Number((user as any)?.verification_status ?? 1);
+			// Fail closed: a missing verification_status is treated as NOT verified, not verified.
+			const verificationStatus = Number((user as any)?.verification_status ?? 0);
 
-			// console.log('[RootNavigation] user accepted terms, role=', role, 'firstSegment=', firstSegment);
-			// console.log({pathname,segments});
 			// Verification guard
 			if (verificationStatus !== 1) {
 
@@ -87,20 +81,19 @@ function RootNavigation() {
 			}
 			
 			if (isTeacherRole && inSchoolTabs) {
-				console.log('[RootNavigation] teacher in school tabs - redirect to teacher-tabs');
 				router.replace('/(teacher-tabs)');
 			} else if (isSchoolRole && inTeacherTabs) {
-				console.log('[RootNavigation] school in teacher tabs - redirect to school-tabs');
 				router.replace('/(school-tabs)');
 			} else if (isPublicRoute) {
 				if (isTeacherRole) {
-					console.log('[RootNavigation] public route - teacher -> teacher-tabs');
 					router.replace('/(teacher-tabs)');
 				} else if (isSchoolRole) {
-					console.log('→ school masuk school-tabs');
 					router.replace('/(school-tabs)');
 				} else {
-					console.log(' ROLE GA JELAS:', role);
+					notify('Error', 'Your account role could not be recognized. Please log in again.', () => {
+						logout();
+						router.replace('/login');
+					});
 				}
 			}
 		}

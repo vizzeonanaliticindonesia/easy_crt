@@ -164,6 +164,14 @@ export async function deleteSchoolDocument(documentId: string) {
   return res;
 }
 
+// NOTE: endpoint follows the insert/delete naming convention above ('/school/document/insert',
+// '/school/document/delete') — verify against the actual CodeIgniter route before treating this as final.
+export async function editSchoolDocument(documentId: string, formData: FormData) {
+  formData.append('document_id', documentId);
+  const res = await api.post('/school/document/update', formData);
+  return res;
+}
+
 // =================================== SCHOOL DASHBOARD ======================================================
 export function getDashboardData() {
   return api.get('/school/dashboard/get_data');
@@ -207,18 +215,21 @@ export function getInvoiceData() {
   return api.get('/school/invoice/get_data');
 }
 
-export async function insertInvoice(invoiceId: string, paymentMethod: string, payload: { fileUri: string; fileMimeType: string; fileName: string }) {
+export async function insertInvoice(invoiceId: string, paymentMethod: string, payload?: { fileUri: string; fileMimeType: string; fileName: string }) {
   const formData = new FormData();
   formData.append('invoice_id', invoiceId);
   formData.append('payment_method', paymentMethod);
 
-  if (Platform.OS === 'web') {
-    const resBlob = await fetch(payload.fileUri);
-    const blob = await resBlob.blob();
-    const filename = payload.fileName || (payload.fileUri ? payload.fileUri.split('/').pop() : 'file');
-    formData.append('file_payment', blob, filename);
-  } else {
-    formData.append('file_payment', { uri: payload.fileUri, name: payload.fileName, type: payload.fileMimeType } as any);
+  // Bank-transfer payments attach proof of payment; card payments (Stripe) don't need a file.
+  if (payload?.fileUri) {
+    if (Platform.OS === 'web') {
+      const resBlob = await fetch(payload.fileUri);
+      const blob = await resBlob.blob();
+      const filename = payload.fileName || payload.fileUri.split('/').pop() || 'file';
+      formData.append('file_payment', blob, filename);
+    } else {
+      formData.append('file_payment', { uri: payload.fileUri, name: payload.fileName, type: payload.fileMimeType } as any);
+    }
   }
 
   const res = await api.post('/school/invoice/insert', formData);
@@ -270,4 +281,4 @@ export function rejectSession(scheduleId: number, notes: string = "") {
   });
 }
 
-export default { registerStep1, registerStep2, getSuburbs, getStates, uploadDocument, getSchoolProfile, updateSchoolProfile, uploadProfilePhoto, getSchoolDocuments, insertSchoolDocument, deleteSchoolDocument, insertSession, updateSession, getInvoiceData, insertInvoice, getPaymentLogs, getCategories, getSubjects, getTeachers, sendRequest, insertReview, getNotifications, markNotificationRead, getSessionConfirmation, getSessionConfirmationDetails, confirmSession, rejectSession };
+export default { registerStep1, registerStep2, getSuburbs, getStates, uploadDocument, getSchoolProfile, updateSchoolProfile, uploadProfilePhoto, getSchoolDocuments, insertSchoolDocument, deleteSchoolDocument, editSchoolDocument, insertSession, updateSession, getInvoiceData, insertInvoice, getPaymentLogs, getCategories, getSubjects, getTeachers, sendRequest, insertReview, getNotifications, markNotificationRead, getSessionConfirmation, getSessionConfirmationDetails, confirmSession, rejectSession };

@@ -18,7 +18,8 @@ import {
     useResponsiveSpacing,
 } from '@/components/ui/AppPrimitives';
 import { editSchoolDocument, getSchoolDocuments } from '@/lib/services/school';
-import { getTeacherDocuments } from '@/lib/services/teacher';
+import { editTeacherDocument, getTeacherDocuments } from '@/lib/services/teacher';
+import { updateDocumentForRole } from '@/lib/services/document-routing';
 import { useAuth } from '@/contexts/AuthContext';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +55,7 @@ export default function EditDocumentScreen() {
     const [issueDate, setIssueDate] = React.useState('');
     const [expiryDate, setExpiryDate] = React.useState('');
     const [selectedFile, setSelectedFile] = React.useState<SelectedFile | null>(null);
+    const [isExistingServerFile, setIsExistingServerFile] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
     const [loadingDetail, setLoadingDetail] = React.useState(false);
     const [previewVisible, setPreviewVisible] = React.useState(false);
@@ -104,6 +106,7 @@ export default function EditDocumentScreen() {
                         mimeType, // ✅ deteksi dari ekstensi
                         size: 0,
                     });
+                    setIsExistingServerFile(true);
                 }
             } catch {
                 notify('Error', 'Failed to load document detail.');
@@ -150,6 +153,7 @@ export default function EditDocumentScreen() {
                 mimeType: mimeType || 'application/octet-stream',
                 size: fileSize,
             });
+            setIsExistingServerFile(false);
         } catch {
             notify('Error', 'Failed to pick file. Please try again.');
         }
@@ -172,7 +176,7 @@ export default function EditDocumentScreen() {
             formData.append('issue_date', issueDate);
             formData.append('expiry_date', expiryDate);
 
-            if (selectedFile && !selectedFile.uri.includes('/uploads')) {
+            if (selectedFile && !isExistingServerFile) {
                 if (Platform.OS === 'web') {
                     const resBlob = await fetch(selectedFile.uri);
                     const blob = await resBlob.blob();
@@ -189,7 +193,13 @@ export default function EditDocumentScreen() {
                 }
             }
 
-            await editSchoolDocument(documentId, formData);
+            await updateDocumentForRole({
+                userRole: user?.role,
+                documentId,
+                formData,
+                editTeacherDocument,
+                editSchoolDocument,
+            });
 
             notify('Success', 'Document updated successfully.', () => {
                 if (user?.role == 10) {

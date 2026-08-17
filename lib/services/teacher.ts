@@ -113,6 +113,14 @@ export function deleteTeacherDocument(documentId: string) {
   return api.del(`/teacher/documents/${documentId}`);
 }
 
+// NOTE: endpoint is a best guess following the school-side '/school/document/update' convention —
+// verify against the actual CodeIgniter route before treating this as final.
+export async function editTeacherDocument(documentId: string, formData: FormData) {
+  formData.append('document_id', documentId);
+  const res = await api.post('/teacher/document/update', formData);
+  return res;
+}
+
 export function getTeacherSubjects() {
   return api.get('/teacher/subjects');
 }
@@ -137,6 +145,12 @@ export function getTeacherEarnings() {
 }
 
 //=================== TEACHER SESSIONS =================================
+
+// NOTE: endpoint follows the school-side '/school/dashboard/get_data' naming convention —
+// verify against the actual CodeIgniter route before treating this as final.
+export function getTeacherDashboardData() {
+  return api.get('/teacher/dashboard/get_data');
+}
 
 export function acceptSession(notificationId: number) {
   return api.post('/teacher/session/accept', {
@@ -175,6 +189,20 @@ export async function checkOutSlot(scheduleId: number) {
   return res;
 }
 
+// NOTE: endpoint paths follow the checkin/checkout naming convention above —
+// verify against the actual CodeIgniter routes before treating this as final.
+export async function confirmAttendance(scheduleId: number) {
+  return api.post('/teacher/session/confirm_attendance', {
+    schedule_id: scheduleId
+  });
+}
+
+export async function unableAttendance(scheduleId: number) {
+  return api.post('/teacher/session/unable_attendance', {
+    schedule_id: scheduleId
+  });
+}
+
 //====================== NOTIFICATION =========================
 export function getNotifications() {
   return api.get('/teacher/notification');
@@ -189,4 +217,4 @@ export function getTeacherReviews() {
   return api.get('/teacher/profile/review');
 }
 
-export default { registerStep1, registerStep2, getSuburbs, getStates, uploadDocument, getTeacherProfile, updateTeacherProfile, uploadProfilePhoto, getTeacherDocuments, deleteTeacherDocument, getTeacherSubjects, getAllSubjects, deleteTeacherSubject, createTeacherSubject, getTeacherEarnings, acceptSession, declineSession, checkInSlot, checkOutSlot, getNotifications, markNotificationAsRead, getTeacherReviews };
+export default { registerStep1, registerStep2, getSuburbs, getStates, uploadDocument, getTeacherProfile, updateTeacherProfile, uploadProfilePhoto, getTeacherDocuments, deleteTeacherDocument, editTeacherDocument, getTeacherSubjects, getAllSubjects, deleteTeacherSubject, createTeacherSubject, getTeacherEarnings, acceptSession, declineSession, checkInSlot, checkOutSlot, confirmAttendance, unableAttendance, getNotifications, markNotificationAsRead, getTeacherReviews };
