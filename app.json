@@ -35,12 +35,20 @@
           "backgroundColor": "#2563EB"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.vizzeon.teacherrelief"
+        }
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
+      "apiBaseUrl": "https://easycrt.vizzeon.com/api",
       "router": {},
       "eas": {
         "projectId": "7210dc82-d0f5-4e94-b223-32419e2bca16"
