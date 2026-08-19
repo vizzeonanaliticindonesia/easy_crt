@@ -11,8 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { useStripe, CardField } from '@/lib/stripe-mock';
-import type { CardFieldInput } from '@stripe/stripe-react-native';
+import { useStripe, CardField, CardFieldDetails } from '@/lib/stripe-mock';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -102,7 +101,7 @@ export default function SchoolInvoicesScreen() {
     const [paymentModalVisible, setPaymentModalVisible] = useState(false);
     const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
     const { createPaymentMethod } = useStripe();
-    const [cardDetails, setCardDetails] = useState<CardFieldInput.Details | null>(null);
+    const [cardDetails, setCardDetails] = useState<CardFieldDetails | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
     const [stats, setStats] = useState({ total: 0, unpaid: 0, waiting: 0, paid: 0 });
